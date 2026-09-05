@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexTech - Plataforma de Inventario y Click & Collect</title>
+    <!-- Fuente Inter desde Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="navbar">
+        <div class="logo">NexTech</div>
+        <nav class="nav-links">
+            <button class="nav-link active" data-target="seccion-catalogo">Catálogo</button>
+            <button class="nav-link" data-target="seccion-asistente">🤖 Asistente IA</button>
+            <button class="nav-link" data-target="seccion-reserva">Reservar</button>
+            <button class="nav-link" data-target="seccion-ordenes">Mis Órdenes</button>
+        </nav>
+        <div class="sucursal-selector-container">
+            <select id="sucursal-global" class="form-select">
+                <option value="todas">Todas las sucursales</option>
+            </select>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- Notificaciones -->
+        <div id="toast-container"></div>
+
+        <!-- SECCIÓN 1: Catálogo -->
+        <section id="seccion-catalogo" class="seccion activa">
+            <h1 class="page-title">Catálogo de Productos</h1>
+            <div id="loading-catalogo" class="loading">Cargando productos...</div>
+            <div id="grilla-productos" class="grilla">
+                <!-- Se inyectarán las cards acá -->
+            </div>
+        </section>
+
+        <!-- SECCIÓN ASISTENTE IA (Nuevo componente de IA visible) -->
+        <section id="seccion-asistente" class="seccion">
+            <h1 class="page-title">Asistente Inteligente de Compra & Stock</h1>
+            <p class="section-desc">Consultá en lenguaje natural qué equipamiento necesitás. La IA analiza requerimientos y valida stock en tiempo real en cada sucursal.</p>
+            
+            <div class="card asistente-card">
+                <div class="form-group">
+                    <label for="input-consulta-ia">¿Qué estás buscando o qué presupuesto tenés?</label>
+                    <div class="search-bar">
+                        <input type="text" id="input-consulta-ia" class="form-input" placeholder="Ej: Necesito una notebook para programar y un teclado mecánico...">
+                        <button id="btn-consultar-ia" class="btn btn-primary">Preguntar a la IA</button>
+                    </div>
+                </div>
+
+                <div class="sugerencias-container">
+                    <span class="text-sm">Sugerencias rápidas:</span>
+                    <button class="chip-sug" onclick="aplicarSugerencia('Notebook y mouse para desarrollo y trabajo')">Notebook y mouse</button>
+                    <button class="chip-sug" onclick="aplicarSugerencia('Monitor curvo 34 pulgadas con stock en Obelisco')">Monitor curvo</button>
+                    <button class="chip-sug" onclick="aplicarSugerencia('Presupuesto de $1500 USD para equipar puesto')">Presupuesto $1500</button>
+                </div>
+            </div>
+
+            <!-- Contenedor de resultado de IA -->
+            <div id="ia-resultado" class="card mt-20" style="display: none;">
+                <div class="ia-header">
+                    <div class="ia-badge">
+                        <span class="ia-dot"></span>
+                        <span id="ia-modelo-nombre">NexTech AI Engine</span>
+                    </div>
+                    <span id="ia-sucursal-nombre" class="text-cyan text-sm"></span>
+                </div>
+                
+                <div class="ia-respuesta-texto mt-20" id="ia-texto-salida"></div>
+
+                <div class="mt-20">
+                    <h3>Componentes con Stock Confirmado:</h3>
+                    <div id="ia-productos-recomendados" class="grilla mt-20">
+                        <!-- Cards de productos sugeridos -->
+                    </div>
+                </div>
+
+                <div class="ia-total-bar mt-20">
+                    <div>
+                        <span class="text-sm text-muted">Total Estimado:</span>
+                        <div id="ia-total-monto" class="total-monto">$0.00</div>
+                    </div>
+                    <button id="btn-ia-reservar" class="btn btn-primary btn-large">
+                        ⚡ Reservar Selección (Click & Collect)
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECCIÓN 2: Reserva -->
+        <section id="seccion-reserva" class="seccion">
+            <h1 class="page-title">Crear Reserva (Click & Collect)</h1>
+            <div class="reserva-container card">
+                <div id="producto-seleccionado-info">
+                    <p>No hay producto seleccionado. Ve al catálogo o consultá al Asistente IA para elegir uno.</p>
+                </div>
+                <form id="form-reserva" style="display: none;">
+                    <input type="hidden" id="reserva-producto-id">
+                    
+                    <div class="form-group">
+                        <label for="reserva-sucursal">Sucursal de Retiro</label>
+                        <select id="reserva-sucursal" class="form-select" required>
+                            <!-- Opciones inyectadas por JS -->
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="reserva-cantidad">Cantidad</label>
+                        <input type="number" id="reserva-cantidad" class="form-input" min="1" value="1" required>
+                        <span id="max-stock-info" class="text-sm"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="reserva-email">Email (opcional para confirmación)</label>
+                        <input type="email" id="reserva-email" class="form-input" placeholder="tu@email.com">
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-block">Confirmar Reserva Atómica</button>
+                </form>
+            </div>
+        </section>
+
+        <!-- SECCIÓN 3: Órdenes -->
+        <section id="seccion-ordenes" class="seccion">
+            <h1 class="page-title">Consultar / Retirar Orden</h1>
+            <div class="card orden-search">
+                <div class="form-group">
+                    <label for="buscar-orden-id">ID de Orden</label>
+                    <div class="search-bar">
+                        <input type="text" id="buscar-orden-id" class="form-input" placeholder="Ej: ORD-1 o 1">
+                        <button id="btn-buscar-orden" class="btn btn-primary">Buscar</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="orden-resultado" class="card mt-20" style="display: none;">
+                <!-- Detalles de la orden -->
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal de Éxito de Reserva -->
+    <div id="modal-reserva" class="modal">
+        <div class="modal-content card">
+            <h2>¡Reserva Confirmada!</h2>
+            <div class="modal-body">
+                <p>Tu orden ha sido registrada correctamente en el inventario con bloqueo transaccional.</p>
+                <div class="info-box">
+                    <p><strong>Nº de Orden:</strong> <span id="modal-orden-id" class="text-cyan"></span></p>
+                    <p><strong>PIN de Retiro:</strong> <span id="modal-pin" class="text-violet"></span></p>
+                    <p><strong>Vencimiento:</strong> <span id="modal-vencimiento"></span></p>
+                </div>
+                <p class="text-sm">Presentá este PIN en la sucursal seleccionada para retirar tu producto.</p>
+            </div>
+            <button id="btn-cerrar-modal" class="btn btn-primary btn-block">Entendido</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
