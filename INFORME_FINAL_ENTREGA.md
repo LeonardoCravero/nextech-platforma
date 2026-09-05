@@ -12,7 +12,7 @@
 
 | Recurso | URL | Descripción |
 |---|---|---|
-| **Repositorio GitHub** | `https://github.com/LeonardoCravero/Tecnicas-Avanzadas-de-Programacion` | Código fuente completo con historial de commits progresivos y README |
+| **Repositorio GitHub** | `https://github.com/LeonardoCravero/nextech-platforma` | Código fuente completo con historial de commits progresivos y README |
 | **Aplicación Web (Local / Demo)** | `http://localhost:8000` / `frontend/index.html` | Frontend SPA dark-mode conectado en tiempo real al backend FastAPI |
 | **Documentación de API (Swagger UI)** | `http://localhost:8000/docs` | OpenAPI interactivo con endpoints de inventario, reservas, PIN y Asistente IA |
 | **Video de Demostración** | *(Enlace a Loom / Drive / YouTube)* | Demostración en vivo (< 3 min) del flujo de consulta IA, reserva atómica y retiro con PIN |
