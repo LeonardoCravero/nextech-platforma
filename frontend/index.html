@@ -3,23 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NexTech - Plataforma de Inventario y Click & Collect</title>
+    <title>NexTech - Hardware & Service | Inventario Real y Click & Collect</title>
     <!-- Fuente Inter desde Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- Barra Superior de Publicidad y Avisos -->
+    <div class="top-promo-bar">
+        <div class="top-promo-content">
+            <span>🔥 <strong>SEMANA GAMER NEXTECH</strong>: Hasta 12 cuotas fijas | ⚡ Retiro gratis en 1 hora en 4 sucursales | 🛡️ Stock atómico anti-sobreventa garantizado</span>
+        </div>
+    </div>
+
+    <!-- Header Principal -->
     <header class="navbar">
-        <div class="logo">NexTech</div>
+        <div class="logo-container">
+            <div class="logo">NexTech<span class="logo-dot">.</span></div>
+            <span class="logo-tag">HARDWARE & SERVICE</span>
+        </div>
         <nav class="nav-links">
             <button class="nav-link active" data-target="seccion-catalogo">Catálogo</button>
             <button class="nav-link" data-target="seccion-asistente">🤖 Asistente IA</button>
-            <button class="nav-link" data-target="seccion-reserva">Reservar</button>
-            <button class="nav-link" data-target="seccion-ordenes">Mis Órdenes</button>
+            <button class="nav-link" data-target="seccion-ordenes">Mis Órdenes / Retiro</button>
         </nav>
         <div class="sucursal-selector-container">
+            <label for="sucursal-global" class="sucursal-label">📍 Sucursal:</label>
             <select id="sucursal-global" class="form-select">
                 <option value="todas">Todas las sucursales</option>
             </select>
@@ -27,37 +38,116 @@
     </header>
 
     <main class="container">
-        <!-- Notificaciones -->
+        <!-- Notificaciones Flotantes -->
         <div id="toast-container"></div>
 
-        <!-- SECCIÓN 1: Catálogo -->
+        <!-- ========================================== -->
+        <!-- SECCIÓN 1: CATÁLOGO CON HERO & PUBLICIDAD   -->
+        <!-- ========================================== -->
         <section id="seccion-catalogo" class="seccion activa">
-            <h1 class="page-title">Catálogo de Productos</h1>
-            <div id="loading-catalogo" class="loading">Cargando productos...</div>
+            
+            <!-- Bienvenida / Hero Banner -->
+            <div class="hero-welcome">
+                <div class="hero-content">
+                    <div class="hero-badge">⚡ Retiro Inmediato en 1 Hora · 4 Sucursales Físicas</div>
+                    <h1 class="hero-title">Equipamiento de Alto Rendimiento con <span class="text-cyan">Stock Real Garantizado</span></h1>
+                    <p class="hero-subtitle">Comprá componentes y notebooks con reserva atómica instantánea o consultá a nuestro <strong>Asistente IA</strong> para armar tu configuración ideal sin sobreventas ni demoras logísticas.</p>
+                    
+                    <div class="hero-actions">
+                        <a href="#catalogo-heading" class="btn btn-primary btn-large">Explorar Catálogo</a>
+                        <button onclick="document.querySelector('[data-target=\'seccion-asistente\']').click()" class="btn btn-outline btn-large">🤖 Asistente IA de Stock</button>
+                    </div>
+                </div>
+
+                <div class="hero-stats">
+                    <div class="stat-card">
+                        <span class="stat-icon">🏬</span>
+                        <span class="stat-number">4</span>
+                        <span class="stat-label">Locales Físicos</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-icon">🔒</span>
+                        <span class="stat-number">ACID</span>
+                        <span class="stat-label">Stock Bloqueado</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-icon">⏱️</span>
+                        <span class="stat-number">&lt; 1h</span>
+                        <span class="stat-label">Listo para Retiro</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Banners Publicitarios Oficiales / Sponsors -->
+            <div class="ads-grid">
+                <div class="ad-banner ad-banner-rog">
+                    <div class="ad-tag">PUBLICIDAD OFICIAL</div>
+                    <div class="ad-body">
+                        <span class="ad-brand">ASUS ROG · NVIDIA GEFORCE RTX 40</span>
+                        <h3>Máxima Potencia Gráfica & DLSS 3.5</h3>
+                        <p>Stock reservable hoy mismo en Central Obelisco y Belgrano Tech con garantía oficial.</p>
+                        <span class="ad-link" onclick="filtrarCategoria('Laptops')">Ver Equipos Compatibles &rarr;</span>
+                    </div>
+                </div>
+
+                <div class="ad-banner ad-banner-corsair">
+                    <div class="ad-tag">PARTNER DESTACADO</div>
+                    <div class="ad-body">
+                        <span class="ad-brand">CORSAIR VENGEANCE DDR5 & SAMSUNG NVMe</span>
+                        <h3>Velocidad Competitiva & Transferencia Pura</h3>
+                        <p>Memorias de 5600MHz y discos PCIe 4.0 con retiro express con código PIN.</p>
+                        <span class="ad-link" onclick="filtrarCategoria('Componentes')">Explorar Componentes &rarr;</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Título del Catálogo y Filtros -->
+            <div class="catalogo-header" id="catalogo-heading">
+                <div>
+                    <h2 class="section-heading">Catálogo de Productos</h2>
+                    <p class="text-muted text-sm">Disponibilidad verificada en tiempo real en cada punto de retiro</p>
+                </div>
+                <div class="catalogo-filtros-rapidos">
+                    <button class="filtro-btn activo" onclick="filtrarPorTag('todos', this)">Todos</button>
+                    <button class="filtro-btn" onclick="filtrarPorTag('Laptops', this)">Laptops</button>
+                    <button class="filtro-btn" onclick="filtrarPorTag('Monitores', this)">Monitores</button>
+                    <button class="filtro-btn" onclick="filtrarPorTag('Periféricos', this)">Periféricos</button>
+                    <button class="filtro-btn" onclick="filtrarPorTag('Componentes', this)">Componentes</button>
+                </div>
+            </div>
+
+            <div id="loading-catalogo" class="loading">Cargando inventario en tiempo real...</div>
+            
             <div id="grilla-productos" class="grilla">
-                <!-- Se inyectarán las cards acá -->
+                <!-- Se inyectan las cards con JS -->
             </div>
         </section>
 
-        <!-- SECCIÓN ASISTENTE IA (Nuevo componente de IA visible) -->
+        <!-- ========================================== -->
+        <!-- SECCIÓN 2: ASISTENTE INTELIGENTE IA        -->
+        <!-- ========================================== -->
         <section id="seccion-asistente" class="seccion">
-            <h1 class="page-title">Asistente Inteligente de Compra & Stock</h1>
-            <p class="section-desc">Consultá en lenguaje natural qué equipamiento necesitás. La IA analiza requerimientos y valida stock en tiempo real en cada sucursal.</p>
+            <div class="asistente-hero">
+                <div class="ia-pill">🤖 Asistente Técnico en Tiempo Real</div>
+                <h1 class="page-title">Asistente Inteligente de Compra & Stock</h1>
+                <p class="section-desc">Escribí en lenguaje natural qué necesitás o qué presupuesto tenés. La IA analiza requerimientos técnicos y valida stock físico disponible en cada sucursal.</p>
+            </div>
             
             <div class="card asistente-card">
                 <div class="form-group">
-                    <label for="input-consulta-ia">¿Qué estás buscando o qué presupuesto tenés?</label>
+                    <label for="input-consulta-ia" class="asistente-prompt-label">¿Qué estás buscando o qué uso le vas a dar?</label>
                     <div class="search-bar">
-                        <input type="text" id="input-consulta-ia" class="form-input" placeholder="Ej: Necesito una notebook para programar y un teclado mecánico...">
-                        <button id="btn-consultar-ia" class="btn btn-primary">Preguntar a la IA</button>
+                        <input type="text" id="input-consulta-ia" class="form-input" placeholder="Ej: Necesito una notebook para programar y un monitor para retirar hoy...">
+                        <button id="btn-consultar-ia" class="btn btn-primary">Consultar Asistente</button>
                     </div>
                 </div>
 
                 <div class="sugerencias-container">
-                    <span class="text-sm">Sugerencias rápidas:</span>
-                    <button class="chip-sug" onclick="aplicarSugerencia('Notebook y mouse para desarrollo y trabajo')">Notebook y mouse</button>
-                    <button class="chip-sug" onclick="aplicarSugerencia('Monitor curvo 34 pulgadas con stock en Obelisco')">Monitor curvo</button>
-                    <button class="chip-sug" onclick="aplicarSugerencia('Presupuesto de $1500 USD para equipar puesto')">Presupuesto $1500</button>
+                    <span class="text-sm text-muted">Consultas sugeridas:</span>
+                    <button class="chip-sug" onclick="aplicarSugerencia('Notebook y mouse para desarrollo y trabajo')">💻 Notebook + Mouse</button>
+                    <button class="chip-sug" onclick="aplicarSugerencia('Monitor curvo 34 pulgadas con stock en Obelisco')">🖥️ Monitor Curvo 34"</button>
+                    <button class="chip-sug" onclick="aplicarSugerencia('Presupuesto de $1500 USD para equipar puesto')">💰 Presupuesto $1500 USD</button>
+                    <button class="chip-sug" onclick="aplicarSugerencia('Memoria DDR5 y disco SSD para actualizar')">⚡ Upgrade RAM + SSD</button>
                 </div>
             </div>
 
@@ -68,13 +158,13 @@
                         <span class="ia-dot"></span>
                         <span id="ia-modelo-nombre">NexTech AI Engine</span>
                     </div>
-                    <span id="ia-sucursal-nombre" class="text-cyan text-sm"></span>
+                    <span id="ia-sucursal-nombre" class="text-cyan text-sm font-semibold"></span>
                 </div>
                 
                 <div class="ia-respuesta-texto mt-20" id="ia-texto-salida"></div>
 
                 <div class="mt-20">
-                    <h3>Componentes con Stock Confirmado:</h3>
+                    <h3 class="subheading-stock">Hardware con Stock Confirmado para Retiro:</h3>
                     <div id="ia-productos-recomendados" class="grilla mt-20">
                         <!-- Cards de productos sugeridos -->
                     </div>
@@ -82,7 +172,7 @@
 
                 <div class="ia-total-bar mt-20">
                     <div>
-                        <span class="text-sm text-muted">Total Estimado:</span>
+                        <span class="text-sm text-muted">Total Estimado de la Selección:</span>
                         <div id="ia-total-monto" class="total-monto">$0.00</div>
                     </div>
                     <button id="btn-ia-reservar" class="btn btn-primary btn-large">
@@ -92,72 +182,132 @@
             </div>
         </section>
 
-        <!-- SECCIÓN 2: Reserva -->
-        <section id="seccion-reserva" class="seccion">
-            <h1 class="page-title">Crear Reserva (Click & Collect)</h1>
-            <div class="reserva-container card">
-                <div id="producto-seleccionado-info">
-                    <p>No hay producto seleccionado. Ve al catálogo o consultá al Asistente IA para elegir uno.</p>
-                </div>
-                <form id="form-reserva" style="display: none;">
-                    <input type="hidden" id="reserva-producto-id">
-                    
-                    <div class="form-group">
-                        <label for="reserva-sucursal">Sucursal de Retiro</label>
-                        <select id="reserva-sucursal" class="form-select" required>
-                            <!-- Opciones inyectadas por JS -->
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="reserva-cantidad">Cantidad</label>
-                        <input type="number" id="reserva-cantidad" class="form-input" min="1" value="1" required>
-                        <span id="max-stock-info" class="text-sm"></span>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="reserva-email">Email (opcional para confirmación)</label>
-                        <input type="email" id="reserva-email" class="form-input" placeholder="tu@email.com">
-                    </div>
-
-                    <button type="submit" class="btn btn-primary btn-block">Confirmar Reserva Atómica</button>
-                </form>
-            </div>
-        </section>
-
-        <!-- SECCIÓN 3: Órdenes -->
+        <!-- ========================================== -->
+        <!-- SECCIÓN 3: CONSULTAR Y RETIRAR ÓRDENES     -->
+        <!-- ========================================== -->
         <section id="seccion-ordenes" class="seccion">
-            <h1 class="page-title">Consultar / Retirar Orden</h1>
+            <h1 class="page-title">Gestión de Retiro en Mostrador</h1>
+            <p class="section-desc">Consultá el estado de tu orden Click & Collect o presentá tu PIN de seguridad en el local para retirar tus productos.</p>
+
             <div class="card orden-search">
                 <div class="form-group">
-                    <label for="buscar-orden-id">ID de Orden</label>
+                    <label for="buscar-orden-id">Ingresá tu Nº de Orden</label>
                     <div class="search-bar">
-                        <input type="text" id="buscar-orden-id" class="form-input" placeholder="Ej: ORD-1 o 1">
-                        <button id="btn-buscar-orden" class="btn btn-primary">Buscar</button>
+                        <input type="text" id="buscar-orden-id" class="form-input" placeholder="Ej: ORD-1 o simplemente 1">
+                        <button id="btn-buscar-orden" class="btn btn-primary">Buscar Orden</button>
                     </div>
                 </div>
             </div>
 
             <div id="orden-resultado" class="card mt-20" style="display: none;">
-                <!-- Detalles de la orden -->
+                <!-- Detalles de la orden inyectados con JS -->
             </div>
         </section>
     </main>
 
-    <!-- Modal de Éxito de Reserva -->
-    <div id="modal-reserva" class="modal">
-        <div class="modal-content card">
-            <h2>¡Reserva Confirmada!</h2>
-            <div class="modal-body">
-                <p>Tu orden ha sido registrada correctamente en el inventario con bloqueo transaccional.</p>
-                <div class="info-box">
-                    <p><strong>Nº de Orden:</strong> <span id="modal-orden-id" class="text-cyan"></span></p>
-                    <p><strong>PIN de Retiro:</strong> <span id="modal-pin" class="text-violet"></span></p>
-                    <p><strong>Vencimiento:</strong> <span id="modal-vencimiento"></span></p>
+    <!-- ========================================== -->
+    <!-- MODAL EMERGENTE 1: FORMULARIO DE RESERVA   -->
+    <!-- ========================================== -->
+    <div id="modal-flujo-reserva" class="modal">
+        <div class="modal-content modal-reserva-card card">
+            <div class="modal-header">
+                <div class="modal-title-wrap">
+                    <span class="modal-tag">CLICK & COLLECT EXPRESS</span>
+                    <h2>Reservar Producto</h2>
                 </div>
-                <p class="text-sm">Presentá este PIN en la sucursal seleccionada para retirar tu producto.</p>
+                <button id="btn-cerrar-modal-reserva" class="modal-close-btn" aria-label="Cerrar">&times;</button>
             </div>
-            <button id="btn-cerrar-modal" class="btn btn-primary btn-block">Entendido</button>
+
+            <div class="modal-body">
+                <!-- Preview del producto elegido -->
+                <div class="producto-reserva-preview">
+                    <div class="preview-icon">📦</div>
+                    <div class="preview-info">
+                        <h3 id="modal-prod-nombre" class="preview-nombre">Nombre del Producto</h3>
+                        <span id="modal-prod-categoria" class="preview-categoria">Categoría</span>
+                        <div id="modal-prod-precio" class="preview-precio">$0.00</div>
+                    </div>
+                </div>
+
+                <!-- Formulario de confirmación -->
+                <form id="form-reserva-modal" class="mt-20">
+                    <input type="hidden" id="modal-producto-id">
+
+                    <div class="form-group">
+                        <label for="modal-reserva-sucursal">Seleccionar Sucursal de Retiro</label>
+                        <select id="modal-reserva-sucursal" class="form-select" required>
+                            <!-- Opciones inyectadas dinámicamente -->
+                        </select>
+                        <span id="modal-sucursal-hint" class="text-sm text-cyan mt-5"></span>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group flex-1">
+                            <label for="modal-reserva-cantidad">Cantidad a Reservar</label>
+                            <div class="qty-control">
+                                <button type="button" class="qty-btn" id="qty-btn-minus">-</button>
+                                <input type="number" id="modal-reserva-cantidad" class="form-input text-center" min="1" value="1" required>
+                                <button type="button" class="qty-btn" id="qty-btn-plus">+</button>
+                            </div>
+                            <span id="modal-max-stock-info" class="text-sm text-muted"></span>
+                        </div>
+                        <div class="form-group flex-1">
+                            <label for="modal-reserva-email">Email de Contacto (Opcional)</label>
+                            <input type="email" id="modal-reserva-email" class="form-input" placeholder="tu@email.com">
+                        </div>
+                    </div>
+
+                    <div class="reserva-resumen-box mt-15">
+                        <div class="resumen-item">
+                            <span>Subtotal a pagar en local:</span>
+                            <strong id="modal-resumen-subtotal" class="text-green text-lg">$0.00</strong>
+                        </div>
+                        <div class="resumen-item text-sm text-muted">
+                            <span>Tiempo de retiro:</span>
+                            <span>⚡ En 1 hora con código PIN</span>
+                        </div>
+                    </div>
+
+                    <button type="submit" id="btn-submit-reserva" class="btn btn-primary btn-block btn-large mt-20">
+                        🔒 Confirmar Reserva Atómica
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MODAL EMERGENTE 2: CONFIRMACIÓN EXITOSA     -->
+    <!-- ========================================== -->
+    <div id="modal-exito-reserva" class="modal">
+        <div class="modal-content modal-exito-card card">
+            <div class="exito-icon-wrap">🎉</div>
+            <h2>¡Reserva Confirmada con Éxito!</h2>
+            <p class="text-muted">Tu stock fue bloqueado de forma atómica en el inventario.</p>
+            
+            <div class="info-box mt-20">
+                <div class="pin-display-card">
+                    <span class="pin-label">CÓDIGO PIN DE RETIRO</span>
+                    <div id="modal-exito-pin" class="pin-code">------</div>
+                    <span class="pin-desc">Presentá este código en el mostrador para retirar</span>
+                </div>
+
+                <div class="orden-datos-grid mt-15">
+                    <div>
+                        <span class="text-xs text-muted">NÚMERO DE ORDEN:</span>
+                        <div id="modal-exito-orden-id" class="font-bold text-cyan">ORD-0</div>
+                    </div>
+                    <div>
+                        <span class="text-xs text-muted">VÁLIDO HASTA:</span>
+                        <div id="modal-exito-vencimiento" class="font-bold">24 horas</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-actions mt-20">
+                <button id="btn-copiar-pin" class="btn btn-outline flex-1">📋 Copiar PIN</button>
+                <button id="btn-cerrar-exito" class="btn btn-primary flex-1">Ver Mis Órdenes</button>
+            </div>
         </div>
     </div>
 
