@@ -115,6 +115,63 @@ CREATE TABLE IF NOT EXISTS transferencias_sucursales (
     fecha_solicitud TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     fecha_completada TIMESTAMP
 );
+CREATE INDEX idx_transf_origen ON transferencias_sucursales(sucursal_origen_id);
+CREATE INDEX idx_transf_destino ON transferencias_sucursales(sucursal_destino_id);
+
+-- =========================================================
+-- TABLAS DE EXTENSIÓN: TALLER TÉCNICO Y ARMADOS (MVP2)
+-- =========================================================
+
+-- Cola #ARM: Órdenes de armado de PCs completas (ensamble de piezas nuevas de stock)
+CREATE TABLE IF NOT EXISTS ordenes_armado_pc (
+    id SERIAL PRIMARY KEY,
+    sucursal_id INTEGER NOT NULL REFERENCES sucursales(id),
+    cliente_id INTEGER REFERENCES usuarios(id),
+    tecnico_id INTEGER REFERENCES usuarios(id),
+    total NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+    estado VARCHAR(50) NOT NULL DEFAULT 'pendiente', -- pendiente, en_armado, testeado, entregado, cancelado
+    especificaciones TEXT,
+    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fecha_finalizacion TIMESTAMP
+);
+CREATE INDEX idx_armado_sucursal ON ordenes_armado_pc(sucursal_id);
+CREATE INDEX idx_armado_tecnico ON ordenes_armado_pc(tecnico_id);
+
+-- Ítems/componentes consumidos para armar la PC
+CREATE TABLE IF NOT EXISTS items_armado_pc (
+    id SERIAL PRIMARY KEY,
+    orden_armado_id INTEGER NOT NULL REFERENCES ordenes_armado_pc(id) ON DELETE CASCADE,
+    producto_id INTEGER NOT NULL REFERENCES productos(id),
+    cantidad INTEGER NOT NULL DEFAULT 1,
+    precio_unitario NUMERIC(10, 2) NOT NULL
+);
+
+-- Cola #ST: Órdenes de Servicio Técnico y Reparación (equipos externos de clientes)
+CREATE TABLE IF NOT EXISTS ordenes_servicio_tecnico (
+    id SERIAL PRIMARY KEY,
+    sucursal_id INTEGER NOT NULL REFERENCES sucursales(id),
+    cliente_id INTEGER REFERENCES usuarios(id),
+    tecnico_id INTEGER REFERENCES usuarios(id),
+    equipo_descripcion VARCHAR(255) NOT NULL,
+    falla_reportada TEXT NOT NULL,
+    diagnostico TEXT,
+    costo_mano_obra NUMERIC(10, 2) DEFAULT 0.00,
+    total NUMERIC(10, 2) DEFAULT 0.00,
+    estado VARCHAR(50) NOT NULL DEFAULT 'recibido', -- recibido, diagnosticado, esperando_repuestos, reparado, entregado, no_reparable
+    fecha_ingreso TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fecha_egreso TIMESTAMP
+);
+CREATE INDEX idx_st_sucursal ON ordenes_servicio_tecnico(sucursal_id);
+CREATE INDEX idx_st_tecnico ON ordenes_servicio_tecnico(tecnico_id);
+
+-- Repuestos de stock consumidos durante la reparación
+CREATE TABLE IF NOT EXISTS repuestos_servicio_tecnico (
+    id SERIAL PRIMARY KEY,
+    orden_servicio_id INTEGER NOT NULL REFERENCES ordenes_servicio_tecnico(id) ON DELETE CASCADE,
+    producto_id INTEGER NOT NULL REFERENCES productos(id),
+    cantidad INTEGER NOT NULL DEFAULT 1,
+    costo_unitario NUMERIC(10, 2) NOT NULL
+);
 
 -- ---------------------------------------------------------
 -- DATOS DE EJEMPLO
