@@ -4,7 +4,7 @@
 | :--- | :--- |
 | **Materia** | Inteligencia Artificial para Programadores |
 | **Unidad** | TP Integrador 1 |
-| **Alumno** | Leonardo Cravero |
+| **Alumno** | Leonardo Cravero | Ian Ditlevsen |
 | **Caso de estudio** | NexTech Hardware & Service |
 | **Herramientas utilizadas** | ChatGPT/LLM (arquitectura), Mermaid-IA (UML), Midjourney (exploración visual), Figma AI (wireframes), FastAPI + PostgreSQL (prototipo). |
 
@@ -116,6 +116,45 @@ erDiagram
         bool usado
         timestamp expiracion
     }
+    OrdenArmadoPC {
+        int id PK
+        int sucursal_id FK
+        int cliente_id FK
+        int tecnico_id FK
+        decimal total
+        string estado
+        string especificaciones
+        timestamp fecha_creacion
+        timestamp fecha_finalizacion
+    }
+    ItemArmadoPC {
+        int id PK
+        int orden_armado_id FK
+        int producto_id FK
+        int cantidad
+        decimal precio_unitario
+    }
+    OrdenServicioTecnico {
+        int id PK
+        int sucursal_id FK
+        int cliente_id FK
+        int tecnico_id FK
+        string equipo_descripcion
+        string falla_reportada
+        string diagnostico
+        decimal costo_mano_obra
+        decimal total
+        string estado
+        timestamp fecha_ingreso
+        timestamp fecha_egreso
+    }
+    RepuestoServicioTecnico {
+        int id PK
+        int orden_servicio_id FK
+        int producto_id FK
+        int cantidad
+        decimal costo_unitario
+    }
     Usuario {
         int id PK
         string nombre
@@ -144,6 +183,14 @@ erDiagram
     TransferenciaSucursal }o--|| Producto : transfiere
     Usuario }o--|| Rol : tiene
     Usuario }o--o| Sucursal : asignado_a
+    Sucursal ||--o{ OrdenArmadoPC : aloja
+    Sucursal ||--o{ OrdenServicioTecnico : aloja
+    Usuario ||--o{ OrdenArmadoPC : solicita_o_ensambla
+    Usuario ||--o{ OrdenServicioTecnico : solicita_o_repara
+    OrdenArmadoPC ||--o{ ItemArmadoPC : contiene
+    ItemArmadoPC }o--|| Producto : utiliza
+    OrdenServicioTecnico ||--o{ RepuestoServicioTecnico : requiere
+    RepuestoServicioTecnico }o--|| Producto : repuesto_de
 ```
 
 | Entidad | Propósito y Justificación |
@@ -151,11 +198,13 @@ erDiagram
 | **Sucursal / Producto** | Entidades base. Representan los nodos físicos y el catálogo. |
 | **InventarioSucursal** | Matriz transaccional. (NUEVA) Añadida para separar `stock_disponible` y `stock_reservado`, vital para evitar sobreventas. |
 | **ReservaStock** | (NUEVA) Traza el ciclo de vida de los bloqueos temporales de mercancía por usuario, permitiendo expiración y control atómico. |
-| **MovimientoInventario** | (NUEVA) Tabla de auditoría inmutable para trazar ingresos, egresos, devoluciones y mermas (esencial para el taller en MVP2). |
+| **MovimientoInventario** | (NUEVA) Tabla de auditoría inmutable para trazar ingresos, egresos, reservas, transferencias, devoluciones y salidas a taller. |
 | **TransferenciaSucursal** | (NUEVA) Gestiona el ciclo (origen → tránsito → destino) del movimiento interno de mercadería. |
-| **OrdenClickCollect / ItemOrden** | Encabezado y detalle del carrito de compras reservado para retiro en sucursal. |
+| **OrdenClickCollect / ItemOrden** | Encabezado y detalle del carrito de compras reservado para retiro en sucursal con código PIN. |
 | **PINRetiro** | Mecanismo de seguridad para efectivizar la entrega, uniendo la orden digital con la operación física. |
-| **Usuario / Rol** | Control de acceso basado en roles (RBAC) para diferenciar vistas de clientes, técnicos, vendedores y admins. |
+| **OrdenArmadoPC / ItemArmadoPC** | (NUEVA — Cola #ARM) Modela el ensamble de equipos nuevos a medida consumiendo componentes de inventario, con asignación a técnico y fases de prueba. |
+| **OrdenServicioTecnico / RepuestoServicioTecnico** | (NUEVA — Cola #ST) Gestiona diagnósticos y reparaciones de hardware externo de clientes, registrando fallas, mano de obra y repuestos aplicados. |
+| **Usuario / Rol** | Control de acceso basado en roles (RBAC) para diferenciar vistas de clientes, técnicos, vendedores y administradores. |
 
 ### 4. Modelo de reserva y movimiento de stock (NUEVO — sección profundizada)
 
@@ -176,11 +225,23 @@ stateDiagram-v2
     CONFIRMADA --> [*] : Venta completada
 ```
 
-**Reservar ≠ Descontar:** La diferencia es clave. Reservar bloquea el stock temporalmente; el cliente percibe que el producto ya no está disponible, pero físicamente sigue en la estantería del local. Descontar reduce el inventario permanentemente y sólo ocurre cuando se confirma el retiro con éxito.
+**Diferencia Fundamental entre Reservar y Descontar:**
+* **Reservar (`stock_disponible -= cant, stock_reservado += cant`):** Constituye un bloqueo temporal atómico respaldado por `SELECT FOR UPDATE`. El ítem deja de estar disponible para otros compradores en la web y mostrador, pero físicamente continúa en el depósito del local. No representa una baja contable definitiva de activo.
+* **Descontar (`stock_reservado -= cant` y registro de movimiento `salida`):** Se produce exclusivamente cuando el cliente se presenta físicamente en mostrador y el vendedor valida con éxito el código PIN de 6 caracteres. En ese instante, el stock se da de baja permanentemente del inventario y se emite la factura o comprobante legal de retiro.
 
-**Gestión de devoluciones:** Cuando un producto regresa, se genera un `MovimientoInventario` de tipo 'devolucion', se incrementa el `stock_disponible` y se documenta el motivo para auditoría.
+**Gestión de Devoluciones y Reingreso a Stock (Restocking):**
+Cuando un cliente devuelve un componente (dentro del plazo legal o por garantía inmediata en local) o cuando un ensamble en taller es desarmado:
+1. Se evalúa el estado físico del componente (sellado, abierto funcional o defectuoso).
+2. Si el producto es apto para reventa, se ejecuta un incremento de `stock_disponible += cant`.
+3. Se inserta un registro inmutable en `movimientos_inventario` con `tipo = 'devolucion'`, vinculando el `producto_id`, `inventario_id`, `usuario_id` del empleado que autoriza y el motivo explícito (ej: *"Devolución por incompatibilidad con gabinete del cliente - Ítem verificado funcional"*).
+4. Si el producto estuviera dañado, se registra como `tipo = 'merma'` o `salida_garantia_rma` sin incrementar el `stock_disponible`.
 
-**Transferencias entre sucursales:** El proceso maneja estados (`solicitada` → `en_transito` → `completada`). El stock se descuenta de la sucursal origen al iniciar la transferencia y se acredita en el inventario de destino únicamente al completarla.
+**Transferencias entre Sucursales (Ciclo de Estados y Consistencia):**
+Las transferencias de mercadería para balancear stock entre los 4 locales operan mediante una máquina de estados estricta para evitar la pérdida de trazabilidad:
+1. **`solicitada`:** La sucursal destino genera el pedido. No altera stock aún.
+2. **`en_transito`:** La sucursal origen despacha la mercadería. Se ejecuta un bloqueo pesimista en la sucursal origen, se reduce su `stock_disponible -= cant` y se crea un `movimientos_inventario` con `tipo = 'transferencia'` (origen). La mercadería viaja bajo responsabilidad del transportista interno.
+3. **`completada`:** La sucursal receptora recibe y escanea las cajas. Se incrementa el `stock_disponible += cant` en la sucursal destino, se actualiza `fecha_completada` y se genera el movimiento de entrada correspondiente.
+4. **`cancelada`:** Si se anula el envío antes del despacho o por extravío, el sistema revierte el stock a la sucursal emisora con su correspondiente pista de auditoría.
 
 ### 5. Diagrama de clases UML (Mermaid completo)
 
@@ -260,6 +321,53 @@ classDiagram
         +DateTime expiracion
         +validar(codigo) bool
     }
+    class OrdenArmadoPC {
+        +int id
+        +int sucursal_id
+        +int cliente_id
+        +int tecnico_id
+        +Decimal total
+        +String estado
+        +String especificaciones
+        +DateTime fecha_creacion
+        +DateTime fecha_finalizacion
+        +asignarTecnico(tecnico_id) void
+        +iniciarArmado() void
+        +completarArmado() void
+        +cancelar() void
+    }
+    class ItemArmadoPC {
+        +int id
+        +int orden_armado_id
+        +int producto_id
+        +int cantidad
+        +Decimal precio_unitario
+    }
+    class OrdenServicioTecnico {
+        +int id
+        +int sucursal_id
+        +int cliente_id
+        +int tecnico_id
+        +String equipo_descripcion
+        +String falla_reportada
+        +String diagnostico
+        +Decimal costo_mano_obra
+        +Decimal total
+        +String estado
+        +DateTime fecha_ingreso
+        +DateTime fecha_egreso
+        +asignarTecnico(tecnico_id) void
+        +registrarDiagnostico(diagnostico) void
+        +agregarRepuesto(repuesto_id, cant) void
+        +finalizarReparacion() void
+    }
+    class RepuestoServicioTecnico {
+        +int id
+        +int orden_servicio_id
+        +int producto_id
+        +int cantidad
+        +Decimal costo_unitario
+    }
     class Usuario {
         +int id
         +String nombre
@@ -283,6 +391,14 @@ classDiagram
     TransferenciaSucursal --> Producto : mueve
     Usuario --> Rol : tiene
     Usuario "1" --> "many" OrdenClickCollect : realiza
+    Sucursal "1" --> "many" OrdenArmadoPC : aloja (#ARM)
+    Sucursal "1" --> "many" OrdenServicioTecnico : aloja (#ST)
+    Usuario "1" --> "many" OrdenArmadoPC : asignado / cliente
+    Usuario "1" --> "many" OrdenServicioTecnico : tecnico / cliente
+    OrdenArmadoPC "1" --> "many" ItemArmadoPC : contiene
+    ItemArmadoPC --> Producto : consume
+    OrdenServicioTecnico "1" --> "many" RepuestoServicioTecnico : utiliza
+    RepuestoServicioTecnico --> Producto : repuesto
 ```
 
 ### 6. Consulta de arquitectura y evaluación crítica
@@ -318,6 +434,63 @@ classDiagram
 | **7. Vencimiento de reservas** | Job Celery/Redis cada minuto | `lazy check` + cron PostgreSQL | Celery requiere un worker y broker extra; excesivo para baja concurrencia inicial. |
 
 **Justificación unificada:** La IA tendió a proponer arquitecturas modernas pero sobredimensionadas (microservicios, Celery, OAuth2, motor de reglas). El rol humano fue fundamental para aterrizar el diseño a las capacidades operativas de un equipo de 2 personas, favoreciendo el pragmatismo tecnológico: base de datos robusta (PostgreSQL con bloqueos pesimistas), flujos simplificados (Click & Collect exclusivo) y arquitectura acotada (monolito modular) que aseguran un MVP robusto y entregable.
+
+### 9. Casos Detallados de Iteración de Co-Diseño (Prompt → Propuesta IA → Ajuste Crítico)
+
+A continuación se documentan 3 iteraciones representativas y exhaustivas del proceso de co-diseño con IA sobre el dominio de NexTech, evidenciando el diálogo iterativo, el análisis técnico y el criterio de decisión del estudiante frente a las sugerencias del modelo:
+
+#### Caso 1: Manejo de Concurrencia y Prevención de Sobreventas (Optimistic vs. Pessimistic Locking)
+* **Contexto del problema:** En eventos de alta demanda o lanzamientos (ej: GPUs serie RTX 40), dos usuarios en la web y un cliente presencial en mostrador pueden intentar adquirir simultáneamente la última unidad en stock de una sucursal específica.
+* **Prompt formulado por el alumno:**
+  > *"Tengo un e-commerce y red de 4 sucursales donde dos clientes pueden querer reservar la última unidad de un producto al mismo milisegundo. ¿Cómo manejo la concurrencia en FastAPI y SQLAlchemy para que nunca haya sobreventa? Dame la mejor solución técnica."*
+* **Propuesta técnica de la IA:**
+  > La IA recomendó implementar un esquema de **Control de Concurrencia Optimista (OCC)** utilizando una columna `version_id` en la tabla `inventarios_sucursales`. Propuso que el backend ejecute un bucle de reintento automático (*retry loop* con backoff exponencial) en Python si el `UPDATE` falla por conflicto de versión:
+  > ```python
+  > # Propuesta inicial de la IA (Descartada por sobrecarga)
+  > for attempt in range(max_retries):
+  >     inv = db.query(Inventario).filter_by(id=inv_id, version=v).first()
+  >     if inv.stock_disponible >= cant:
+  >         inv.stock_disponible -= cant
+  >         inv.version += 1
+  >         try:
+  >             db.commit()
+  >             break
+  >         except StaleDataError:
+  >             db.rollback()
+  >             time.sleep(2 ** attempt * 0.05)
+  > ```
+* **Evaluación crítica y ajuste del alumno:**
+  > Se descartó la propuesta de la IA. En situaciones de alta contención sobre hardware escaso (ej: 10 personas intentando reservar la única placa de video en la sucursal Obelisco), el bloqueo optimista satura las conexiones de base de datos y la CPU con reintentos inútiles que terminarán en fallo de 9 de los 10 clientes, aumentando drásticamente la latencia percibida.  
+  > **Decisión y ajuste implementado:** Se impuso el uso de **Bloqueo Pesimista directo a nivel motor SQL (`SELECT ... FOR UPDATE`)** mediante `db.query(InventarioSucursal).filter(...).with_for_update().first()`. Con esta directiva, PostgreSQL serializa los accesos a nivel de fila: la primera transacción adquiere el lock exclusivo, descuenta el stock disponible e inserta la reserva. Las transacciones concurrentes esperan el lock, leen el nuevo estado ya actualizado (`stock_disponible = 0`) y son rechazadas de inmediato con un código `HTTP 409 Conflict` en milisegundos, garantizando consistencia ACID estricta sin bucles de reintento en el servidor de aplicaciones.
+
+---
+
+#### Caso 2: Modelado del Taller Técnico (Cola Única de Tickets vs. Separación Estructural #ARM y #ST)
+* **Contexto del problema:** NexTech realiza dos actividades de taller: armado de PCs vendidas en el local (ensamble de componentes nuevos) y servicio técnico de mantenimiento/reparación de computadoras de clientes.
+* **Prompt formulado por el alumno:**
+  > *"Necesito modelar el taller técnico en la base de datos de NexTech. Hacen armado de PCs vendidas en el local y también reparan computadoras usadas que traen los clientes. ¿Cómo debería ser la estructura de tablas para que los técnicos gestionen el trabajo?"*
+* **Propuesta técnica de la IA:**
+  > La IA sugirió unificar todo el taller en una sola tabla genérica llamada `tickets_taller` con un campo enumerado `tipo: ['armado', 'reparacion']` y una tabla relacional de `items_ticket` polimórfica para registrar repuestos o componentes, argumentando que simplificaba la interfaz del técnico a una única vista tipo Kanban.
+* **Evaluación crítica y ajuste del alumno:**
+  > Se rechazó la unificación en una sola tabla. El análisis del dominio demostró que armar una PC y reparar una máquina externa son procesos de negocio completamente incompatibles a nivel de datos:
+  > 1. **Armado (`#ARM`):** Trabaja exclusivamente con componentes nuevos extraídos del catálogo e inventario físico de la tienda, tiene precio fijo prefijado, genera garantía de producto nuevo y requiere pruebas de benchmark antes de la entrega.
+  > 2. **Servicio Técnico (`#ST`):** Ingresa un activo externo propiedad del cliente (con número de serie, marcas estéticas previas, contraseña de BIOS/OS), requiere una etapa de diagnóstico técnico, cotización previa de mano de obra al cliente, y puede o no consumir repuestos menores.
+  > Fusionarlos obligaría a tener decenas de columnas vacías (*sparse columns* / `NULL`) y generaría confusión contable entre el costo de piezas de stock y el ingreso por mano de obra.  
+  > **Decisión y ajuste implementado:** Se crearon dos entidades separadas (`OrdenArmadoPC` y `OrdenServicioTecnico`) con sus respectivas tablas hijas (`ItemArmadoPC` y `RepuestoServicioTecnico`), canalizadas en dos colas de trabajo visuales independientes para los técnicos.
+
+---
+
+#### Caso 3: Arquitectura del Asistente IA (Inferencia en la Nube vs. SLM Local y Desacoplamiento de Stock)
+* **Contexto del problema:** Se desea incorporar un asistente inteligente en lenguaje natural que ayude a los clientes a elegir componentes según su presupuesto y perfil de uso (gaming, streaming, oficina).
+* **Prompt formulado por el alumno:**
+  > *"Quiero integrar un chatbot con IA que ayude a armar computadoras y recomiende productos según el presupuesto del cliente. ¿Qué API y arquitectura me recomendás usar en el backend?"*
+* **Propuesta técnica de la IA:**
+  > La IA propuso integrar la API comercial de OpenAI (GPT-4o), enviando en el prompt del sistema la totalidad del inventario de productos en un gran bloque JSON para que el modelo decidiera qué productos vender y redactara directamente la orden de compra en su respuesta.
+* **Evaluación crítica y ajuste del alumno:**
+  > Se intervino fuertemente la propuesta por dos riesgos críticos:
+  > 1. **Riesgo de alucinación y sobreventa:** Un modelo de lenguaje generativo jamás debe tener autoridad transaccional sobre el inventario. Si alucina un precio desactualizado o inventa stock de un componente descatalogado, compromete la legalidad de la venta.
+  > 2. **Privacidad, latencia y costos variables:** Delegar cada consulta a un LLM en la nube genera costos recurrentes por token inmanejables para una PyME y hace caer el servicio si se corta la conexión externa a internet en la sucursal.  
+  > **Decisión y ajuste implementado:** Se adoptó una arquitectura híbrida basada en la **Regla de Oro: la IA interpreta y recomienda; la base de datos valida y ejecuta**. Además, se sustituyó el LLM en la nube por un **Small Language Model (SLM) local (Llama 3.2 1B / Phi-3 Mini sobre Ollama)**. El backend filtra primero determinísticamente en PostgreSQL los productos que tienen stock real en la sucursal seleccionada; luego, inyecta únicamente esos ítems verificados al SLM local para que elabore la justificación técnica, operando con costo cero por token, privacidad total y tolerancia a fallos mediante un fallback heurístico si Ollama no estuviese en ejecución.
 
 ---
 
@@ -357,6 +530,8 @@ Servicio global de streaming de video con millones de usuarios concurrentes. Req
 Modern desktop web application UI for NexTech, a high-end gaming hardware store with multi-branch real-time inventory management. Dark mode interface, #0F172A background, neon cyan #00E5FF and violet #7C3AED accent colors, emerald green #10B981 for stock availability indicators, Inter sans-serif typography. Main screen shows: top navigation bar with branch selector dropdown (4 branches), product grid with hardware cards (GPU, CPU, RAM, SSD) each showing stock availability chips per branch, sticky floating cart summary on the right. Ultra-clean SaaS layout, 8px grid, micro-interactions visible, award-winning Figma UI design quality, 16:9 aspect ratio, 4k resolution, photorealistic UI mockup --ar 16:9 --v 6
 ```
 **Evolución del prompt:** Se logró mayor precisión al definir la paleta cromática exacta (Hex codes), la tipografía (Inter), el sistema de grilla (8px) y al especificar detalladamente los componentes clave de la UI (dropdown de sucursal, indicadores de stock). Se actualizó a la versión 6 de Midjourney para mayor fotorrealismo.
+
+![Mockup UI NexTech Generado con IA](nextech_ui_mockup.jpg)
 
 ### 3. Wireframes (3 pantallas clave)
 1. **Catálogo:** Vista principal con grid de productos, barra superior con selector de sucursal y chips de estado de inventario por ítem.
