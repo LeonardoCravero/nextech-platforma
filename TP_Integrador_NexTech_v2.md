@@ -4,7 +4,7 @@
 | :--- | :--- |
 | **Materia** | Inteligencia Artificial para Programadores |
 | **Unidad** | TP Integrador 1 |
-| **Alumno** | Leonardo Cravero | Ian Ditlevsen |
+| **Alumno** | Leonardo Cravero, Ian Ditlevsen |
 | **Caso de estudio** | NexTech Hardware & Service |
 | **Herramientas utilizadas** | ChatGPT/LLM (arquitectura), Mermaid-IA (UML), Midjourney (exploración visual), Figma AI (wireframes), FastAPI + PostgreSQL (prototipo). |
 
