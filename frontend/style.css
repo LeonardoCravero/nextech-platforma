@@ -1028,3 +1028,126 @@ body {
     .nav-links { justify-content: center; }
     .form-row { flex-direction: column; gap: 0; }
 }
+
+/* ==========================================================================
+   AUTENTICACIÓN & ROLES (MODAL, TABS & HEADER)
+   ========================================================================== */
+.auth-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.auth-label {
+    font-size: 0.85rem;
+    color: var(--cyan);
+    font-weight: 600;
+    background: rgba(0, 229, 255, 0.1);
+    padding: 6px 12px;
+    border-radius: 20px;
+    border: 1px solid rgba(0, 229, 255, 0.25);
+}
+
+.auth-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--border-card);
+    padding-bottom: 8px;
+}
+
+.auth-tab {
+    background: transparent;
+    border: none;
+    padding: 8px 16px;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: var(--transition);
+}
+
+.auth-tab:hover {
+    color: var(--text-main);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.auth-tab.active {
+    color: var(--cyan);
+    background: rgba(0, 229, 255, 0.12);
+}
+
+.rol-selector {
+    display: flex;
+    gap: 12px;
+    margin-top: 6px;
+}
+
+.rol-option {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border: 1px solid var(--border-card);
+    border-radius: 8px;
+    background: var(--bg-input);
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.rol-option:hover {
+    border-color: rgba(0, 229, 255, 0.4);
+}
+
+.rol-option input[type="radio"] {
+    accent-color: var(--cyan);
+}
+
+.rol-option:has(input:checked) {
+    border-color: var(--cyan);
+    background: rgba(0, 229, 255, 0.08);
+}
+
+.rol-label {
+    font-weight: 500;
+    font-size: 0.9rem;
+    color: var(--text-main);
+}
+
+/* Tablas para Empleado */
+.tabla-inventario {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--bg-card);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    margin-top: 15px;
+    font-size: 0.9rem;
+}
+
+.tabla-inventario th {
+    background: rgba(15, 23, 42, 0.85);
+    padding: 12px 16px;
+    text-align: left;
+    color: var(--text-muted);
+    font-weight: 600;
+    border-bottom: 1px solid var(--border-card);
+}
+
+.tabla-inventario td {
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    color: var(--text-main);
+}
+
+.tabla-inventario tbody tr:hover {
+    background: rgba(0, 229, 255, 0.03);
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 0.82rem;
+}
+

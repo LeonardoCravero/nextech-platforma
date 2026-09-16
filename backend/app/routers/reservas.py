@@ -6,6 +6,7 @@ import random
 import string
 from .. import models, schemas
 from ..database import get_db
+from ..auth import require_role, get_current_user
 
 router = APIRouter(prefix="/api/reservas", tags=["Reservas"])
 
@@ -13,8 +14,12 @@ def generar_pin(length: int = 6) -> str:
     """Genera un PIN alfanumérico aleatorio."""
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
-@router.post("", response_model=schemas.ReservaResponse)
-def crear_reserva(reserva: schemas.ReservaCreate, db: Session = Depends(get_db)):
+@router.post("", response_model=schemas.ReservaResponse, dependencies=[Depends(require_role("cliente"))])
+def crear_reserva(
+    reserva: schemas.ReservaCreate,
+    db: Session = Depends(get_db),
+    current_user: models.Usuario = Depends(get_current_user)
+):
     """
     Crea una reserva atómica. Verifica stock disponible con SELECT FOR UPDATE.
     Si no hay stock de algún producto, revierte la operación y retorna 409.
@@ -64,13 +69,9 @@ def crear_reserva(reserva: schemas.ReservaCreate, db: Session = Depends(get_db))
         # Crear la orden Click & Collect
         vencimiento = datetime.utcnow() + timedelta(hours=24)
         
-        # Opcional: Buscar usuario si se provee email
-        usuario_id = None
-        if reserva.usuario_email:
-            usuario = db.query(models.Usuario).filter(models.Usuario.email == reserva.usuario_email).first()
-            if usuario:
-                usuario_id = usuario.id
-                
+        # Usar el usuario autenticado
+        usuario_id = current_user.id
+
         nueva_orden = models.OrdenClickCollect(
             usuario_id=usuario_id,
             sucursal_id=reserva.sucursal_id,

@@ -7,8 +7,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Obtener la URL de conexión a la base de datos de la variable de entorno,
-# con SQLite local por defecto para desarrollo inmediato si no se especifica DATABASE_URL
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./nextech.db")
+# con SQLite local por defecto en backend/nextech.db para desarrollo inmediato
+DEFAULT_DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "nextech.db"))
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}")
 
 # Crear el motor de SQLAlchemy adaptado al motor configurado
 if DATABASE_URL.startswith("sqlite"):

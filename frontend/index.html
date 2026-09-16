@@ -27,13 +27,20 @@
         <nav class="nav-links">
             <button class="nav-link active" data-target="seccion-catalogo">Catálogo</button>
             <button class="nav-link" data-target="seccion-asistente">🤖 Asistente IA</button>
-            <button class="nav-link" data-target="seccion-ordenes">Mis Órdenes / Retiro</button>
+            <button class="nav-link" data-target="seccion-ordenes" data-protected="cliente">Mis Órdenes</button>
+            <button class="nav-link" data-target="seccion-inventario" data-protected="empleado">📦 Inventario</button>
+            <button class="nav-link" data-target="seccion-todas-ordenes" data-protected="empleado">📋 Todas las Órdenes</button>
         </nav>
         <div class="sucursal-selector-container">
             <label for="sucursal-global" class="sucursal-label">📍 Sucursal:</label>
             <select id="sucursal-global" class="form-select">
                 <option value="todas">Todas las sucursales</option>
             </select>
+        </div>
+        <div class="auth-container">
+            <span id="auth-user-label" class="auth-label" style="display:none;"></span>
+            <button id="btn-logout" class="btn btn-outline btn-sm" style="display:none;" onclick="cerrarSesion()">Salir</button>
+            <button id="btn-open-auth" class="btn btn-primary btn-sm" onclick="abrirAuthModal()">Iniciar Sesión</button>
         </div>
     </header>
 
@@ -205,8 +212,187 @@
         </section>
     </main>
 
+        <!-- ========================================== -->
+        <!-- SECCIÓN 4: INVENTARIO (solo empleado)       -->
+        <!-- ========================================== -->
+        <section id="seccion-inventario" class="seccion" data-protected="empleado">
+            <h1 class="page-title">Gestión de Inventario</h1>
+            <p class="section-desc">Administrá los productos disponibles en todas las sucursales.</p>
+
+            <div class="card mb-20">
+                <button id="btn-nuevo-producto" class="btn btn-primary" onclick="abrirModalNuevoProducto()">➕ Nuevo Producto</button>
+            </div>
+
+            <div id="tabla-inventario-wrap">
+                <table class="tabla-inventario" id="tabla-inventario">
+                    <thead>
+                        <tr>
+                            <th>Producto</th>
+                            <th>SKU</th>
+                            <th>Categoría</th>
+                            <th>Precio</th>
+                            <th>Sucursal</th>
+                            <th>Disponible</th>
+                            <th>Reservado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody-inventario">
+                        <tr><td colspan="8" class="text-center text-muted">Cargando inventario...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- SECCIÓN 5: TODAS LAS ÓRDENES (empleado)    -->
+        <!-- ========================================== -->
+        <section id="seccion-todas-ordenes" class="seccion" data-protected="empleado">
+            <h1 class="page-title">Todas las Órdenes de Reserva</h1>
+            <p class="section-desc">Gestioná todas las órdenes Click &amp; Collect. Para confirmar un retiro, ingresá el PIN del cliente.</p>
+
+            <div id="tabla-ordenes-wrap">
+                <table class="tabla-inventario" id="tabla-todas-ordenes">
+                    <thead>
+                        <tr>
+                            <th>Orden</th>
+                            <th>Usuario</th>
+                            <th>Sucursal</th>
+                            <th>Total</th>
+                            <th>Estado</th>
+                            <th>Vencimiento</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody-todas-ordenes">
+                        <tr><td colspan="7" class="text-center text-muted">Cargando órdenes...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
     <!-- ========================================== -->
-    <!-- MODAL EMERGENTE 1: FORMULARIO DE RESERVA   -->
+    <!-- MODAL: CONFIRMAR RETIRO (empleado)         -->
+    <!-- ========================================== -->
+    <div id="modal-confirmar-retiro" class="modal">
+        <div class="modal-content card" style="max-width:440px;">
+            <div class="modal-header">
+                <h2>Confirmar Retiro</h2>
+                <button class="modal-close-btn" onclick="cerrarModal('modal-confirmar-retiro')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted mb-15">Ingresá el PIN del cliente para confirmar el retiro de la orden <strong id="retiro-orden-id-label"></strong>.</p>
+                <input type="hidden" id="retiro-orden-id">
+                <div class="form-group">
+                    <label for="retiro-pin-input">PIN del cliente</label>
+                    <input type="text" id="retiro-pin-input" class="form-input" placeholder="XXXXXX" maxlength="6">
+                </div>
+                <button class="btn btn-primary btn-block mt-15" onclick="confirmarRetiro()">✅ Confirmar Retiro</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MODAL: NUEVO/EDITAR PRODUCTO (empleado)    -->
+    <!-- ========================================== -->
+    <div id="modal-producto-form" class="modal">
+        <div class="modal-content card" style="max-width:560px;">
+            <div class="modal-header">
+                <h2 id="modal-producto-titulo">Nuevo Producto</h2>
+                <button class="modal-close-btn" onclick="cerrarModal('modal-producto-form')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="prod-form-id">
+                <div class="form-group">
+                    <label for="prod-form-nombre">Nombre</label>
+                    <input type="text" id="prod-form-nombre" class="form-input" placeholder="Nombre del producto">
+                </div>
+                <div class="form-group">
+                    <label for="prod-form-descripcion">Descripción</label>
+                    <input type="text" id="prod-form-descripcion" class="form-input" placeholder="Descripción breve">
+                </div>
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="prod-form-categoria">Categoría</label>
+                        <input type="text" id="prod-form-categoria" class="form-input" placeholder="Laptops, Monitores...">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="prod-form-precio">Precio (USD)</label>
+                        <input type="number" id="prod-form-precio" class="form-input" placeholder="0.00" step="0.01">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="prod-form-sku">SKU</label>
+                    <input type="text" id="prod-form-sku" class="form-input" placeholder="PROD-SKU-001">
+                </div>
+
+                <!-- Stock inicial por sucursal (solo al CREAR un producto nuevo) -->
+                <div id="prod-form-stock-nuevo" style="display:none;">
+                    <p style="font-size:0.85rem;font-weight:600;margin:14px 0 3px;">
+                        🏢 Asignar a Sucursal(es) y Stock Inicial
+                    </p>
+                    <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:8px;">
+                        Marcá únicamente las sucursales donde este producto estará disponible para la venta.
+                    </p>
+                    <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+                        <thead>
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
+                                <th style="text-align:center;padding:6px 4px;width:40px;color:var(--text-muted);">Vender</th>
+                                <th style="text-align:left;padding:6px 8px;color:var(--text-muted);">Sucursal</th>
+                                <th style="text-align:center;padding:6px 8px;color:var(--text-muted);">Stock inicial</th>
+                                <th style="text-align:center;padding:6px 8px;color:var(--text-muted);">Stock mínimo</th>
+                            </tr>
+                        </thead>
+                        <tbody id="prod-form-stock-nuevo-tbody">
+                            <!-- rows injected by JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Ajuste de stock por sucursal (solo al EDITAR un producto) -->
+                <div id="prod-form-stock-editar" style="display:none;">
+                    <p style="font-size:0.85rem;font-weight:600;margin:14px 0 3px;">
+                        🏢 Stock por Sucursal
+                    </p>
+                    <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:8px;">
+                        Ajustá el stock de cada sucursal o quitá el producto de las que no correspondan.
+                    </p>
+                    <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+                        <thead>
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
+                                <th style="text-align:left;padding:6px 8px;color:var(--text-muted);">Sucursal</th>
+                                <th style="text-align:center;padding:6px 8px;color:var(--text-muted);">Disponible</th>
+                                <th style="text-align:center;padding:6px 8px;color:var(--text-muted);">Reservado</th>
+                                <th style="text-align:center;padding:6px 8px;color:var(--text-muted);">Mínimo</th>
+                                <th style="text-align:center;padding:6px 8px;color:var(--text-muted);">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="prod-form-stock-editar-tbody">
+                            <!-- rows injected by JS -->
+                        </tbody>
+                    </table>
+
+                    <!-- Agregar a otra sucursal -->
+                    <div id="prod-form-agregar-sucursal-wrap" style="margin-top:12px;padding:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:8px;">
+                        <p style="font-size:0.8rem;font-weight:600;margin-bottom:6px;">➕ Asignar a otra sucursal</p>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <select id="prod-form-nueva-sucursal" class="form-select" style="flex:1;padding:5px 8px;font-size:0.82rem;">
+                                <!-- sucursales disponibles -->
+                            </select>
+                            <input type="number" id="prod-form-nuevo-stock" placeholder="Stock" min="1" value="5" class="form-input" style="width:70px;padding:5px;font-size:0.82rem;text-align:center;">
+                            <button type="button" class="btn btn-primary btn-sm" onclick="agregarProductoASucursal()">Asignar</button>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary btn-block mt-15" onclick="guardarProducto()">💾 Guardar Producto</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MODAL FLUJO RESERVA (sin cambios)          -->
     <!-- ========================================== -->
     <div id="modal-flujo-reserva" class="modal">
         <div class="modal-content modal-reserva-card card">
@@ -307,6 +493,80 @@
             <div class="modal-actions mt-20">
                 <button id="btn-copiar-pin" class="btn btn-outline flex-1">📋 Copiar PIN</button>
                 <button id="btn-cerrar-exito" class="btn btn-primary flex-1">Ver Mis Órdenes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MODAL: LOGIN / REGISTRO                    -->
+    <!-- ========================================== -->
+    <div id="modal-auth" class="modal">
+        <div class="modal-content card" style="max-width:480px;">
+            <div class="modal-header">
+                <div class="auth-tabs">
+                    <button class="auth-tab active" data-tab="tab-login" onclick="switchAuthTab('tab-login')">Iniciar Sesión</button>
+                    <button class="auth-tab" data-tab="tab-register" onclick="switchAuthTab('tab-register')">Crear Cuenta</button>
+                </div>
+                <button class="modal-close-btn" onclick="cerrarAuthModal()">&times;</button>
+            </div>
+
+            <!-- Tab: Login -->
+            <div id="tab-login" class="auth-tab-content modal-body">
+                <div class="form-group">
+                    <label for="login-email">Email</label>
+                    <input type="email" id="login-email" class="form-input" placeholder="tu@email.com">
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Contraseña</label>
+                    <input type="password" id="login-password" class="form-input" placeholder="Mínimo 8 caracteres">
+                </div>
+                <button class="btn btn-primary btn-block mt-15" onclick="submitLogin()">🔑 Iniciar Sesión</button>
+                <p class="text-center text-sm text-muted mt-10">
+                    ¿No tenés cuenta? <a href="#" onclick="switchAuthTab('tab-register'); return false;">Creá una aquí</a>
+                </p>
+            </div>
+
+            <!-- Tab: Registro -->
+            <div id="tab-register" class="auth-tab-content modal-body" style="display:none;">
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="reg-nombre">Nombre</label>
+                        <input type="text" id="reg-nombre" class="form-input" placeholder="Juan">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="reg-apellido">Apellido</label>
+                        <input type="text" id="reg-apellido" class="form-input" placeholder="Pérez">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="reg-telefono">Teléfono</label>
+                    <input type="tel" id="reg-telefono" class="form-input" placeholder="+54 11 1234-5678">
+                </div>
+                <div class="form-group">
+                    <label for="reg-email">Email</label>
+                    <input type="email" id="reg-email" class="form-input" placeholder="tu@email.com">
+                </div>
+                <div class="form-group">
+                    <label for="reg-password">Contraseña</label>
+                    <input type="password" id="reg-password" class="form-input" placeholder="Mínimo 8 caracteres">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Tipo de cuenta</label>
+                    <div class="rol-selector">
+                        <label class="rol-option">
+                            <input type="radio" name="reg-rol" value="cliente" checked>
+                            <span class="rol-label">🛒 Cliente</span>
+                        </label>
+                        <label class="rol-option">
+                            <input type="radio" name="reg-rol" value="empleado">
+                            <span class="rol-label">🏪 Empleado</span>
+                        </label>
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-block mt-15" onclick="submitRegister()">✅ Crear Cuenta</button>
+                <p class="text-center text-sm text-muted mt-10">
+                    ¿Ya tenés cuenta? <a href="#" onclick="switchAuthTab('tab-login'); return false;">Iniciá sesión</a>
+                </p>
             </div>
         </div>
     </div>

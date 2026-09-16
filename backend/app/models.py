@@ -21,6 +21,8 @@ class Usuario(Base):
     __tablename__ = "usuarios"
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(100), nullable=False)
+    apellido = Column(String(100), nullable=True)
+    telefono = Column(String(50), nullable=True)
     email = Column(String(100), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     rol_id = Column(Integer, ForeignKey("roles.id"), nullable=False)

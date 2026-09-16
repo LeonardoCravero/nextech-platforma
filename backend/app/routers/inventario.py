@@ -30,7 +30,7 @@ def listar_stock(
         models.Producto.nombre.label("producto_nombre"),
         models.InventarioSucursal.stock_disponible,
         models.InventarioSucursal.stock_reservado
-    ).join(models.Sucursal).join(models.Producto)
+    ).join(models.Sucursal).join(models.Producto).filter(models.Producto.activo == True)
     
     if sucursal_id:
         query = query.filter(models.InventarioSucursal.sucursal_id == sucursal_id)

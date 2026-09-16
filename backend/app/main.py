@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+import os
 from .database import engine, Base
-from .routers import inventario, reservas, ordenes, asistente_ia
+from .routers import inventario, reservas, ordenes, asistente_ia, auth, productos
 import logging
 from sqlalchemy.orm import Session
 from .database import SessionLocal
@@ -22,9 +24,11 @@ app.add_middleware(
 )
 
 # Incluir los routers
+app.include_router(auth.router)
 app.include_router(inventario.router)
 app.include_router(reservas.router)
 app.include_router(ordenes.router)
+app.include_router(productos.router)
 app.include_router(asistente_ia.router)
 
 def seed_db():
@@ -52,7 +56,7 @@ def seed_db():
         db.commit()
 
         # 2. Crear roles
-        roles_data = ["admin", "vendedor", "tecnico", "cliente"]
+        roles_data = ["admin", "vendedor", "tecnico", "cliente", "empleado"]
         for r in roles_data:
             db.add(models.Rol(nombre=r))
         db.commit()
@@ -102,6 +106,11 @@ def startup_event():
     # Ejecutar seeder en el arranque
     seed_db()
 
-@app.get("/")
-def root():
-    return {"message": "Bienvenido a la API de NexTech MVP1", "docs": "/docs"}
+# Servir la aplicación frontend directamente en la raíz
+frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend"))
+if os.path.exists(frontend_dir):
+    app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+else:
+    @app.get("/")
+    def root():
+        return {"message": "Bienvenido a la API de NexTech MVP1", "docs": "/docs"}

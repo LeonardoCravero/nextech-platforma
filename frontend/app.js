@@ -1,592 +1,807 @@
-// URL base de la API
-const API_BASE_URL = 'http://localhost:8000';
+// URL base de la API (usa el origen actual o localhost:8000 por defecto)
+const API_BASE_URL = (typeof window !== 'undefined' && window.location.origin.startsWith('http')) ? window.location.origin : 'http://localhost:8000';
 
-// Estado global de la aplicación
+// Estado global de la aplicacion
 const state = {
     productos: [],
     sucursales: [],
     categoriaActiva: 'todos',
     productoParaModal: null,
-    ultimaRecomendacionIA: null
+    ultimaRecomendacionIA: null,
+    usuario: null  // { token, role, nombre }
 };
 
 // ==========================================================================
-// NAVEGACIÓN Y TABS
+// AUTH HELPERS
 // ==========================================================================
+function decodeJWT(token) {
+    try { return JSON.parse(atob(token.split('.')[1])); } catch(e) { return null; }
+}
+function getAuthHeaders() {
+    const t = state.usuario ? state.usuario.token : null;
+    if (!t) return {'Content-Type':'application/json'};
+    return {'Content-Type':'application/json','Authorization':'Bearer '+t};
+}
+function cargarSesionGuardada() {
+    const token = localStorage.getItem('nextech_token');
+    if (token) {
+        const p = decodeJWT(token);
+        if (p && p.exp * 1000 > Date.now()) {
+            state.usuario = { token, role: p.role, nombre: p.sub };
+        } else {
+            localStorage.removeItem('nextech_token');
+        }
+    }
+}
+function cerrarSesion() {
+    localStorage.removeItem('nextech_token');
+    state.usuario = null;
+    aplicarVisibilidad();
+    showToast('Sesion cerrada.', 'info');
+    document.querySelector('[data-target="seccion-catalogo"]').click();
+}
 
+// ==========================================================================
+// AUTH MODAL
+// ==========================================================================
+function abrirAuthModal() { document.getElementById('modal-auth').classList.add('activo'); }
+function cerrarAuthModal() { document.getElementById('modal-auth').classList.remove('activo'); }
+document.getElementById('modal-auth').addEventListener('click', (e) => {
+    if (e.target.id === 'modal-auth') cerrarAuthModal();
+});
+function switchAuthTab(tabId) {
+    document.querySelectorAll('.auth-tab-content').forEach(t => t.style.display='none');
+    document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById(tabId).style.display='block';
+    document.querySelector('.auth-tab[data-tab="'+tabId+'"]').classList.add('active');
+}
+async function submitLogin() {
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    if (!email || !password) { showToast('Completa todos los campos.','error'); return; }
+    try {
+        const res = await fetch(API_BASE_URL+'/api/auth/login', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({email, password})
+        });
+        if (!res.ok) { const err = await res.json().catch(()=>({detail:'Error'})); throw new Error(err.detail||'Credenciales invalidas'); }
+        const data = await res.json();
+        const payload = decodeJWT(data.access_token);
+        state.usuario = { token: data.access_token, role: payload.role, nombre: email.split('@')[0] };
+        localStorage.setItem('nextech_token', data.access_token);
+        cerrarAuthModal();
+        aplicarVisibilidad();
+        showToast('Bienvenido/a! Rol: '+payload.role, 'success');
+        if (payload.role === 'empleado') { cargarInventarioEmpleado(); cargarTodasLasOrdenes(); }
+    } catch(e) { showToast(e.message,'error'); }
+}
+async function submitRegister() {
+    const nombre = document.getElementById('reg-nombre').value.trim();
+    const apellido = document.getElementById('reg-apellido').value.trim();
+    const telefono = document.getElementById('reg-telefono').value.trim();
+    const email = document.getElementById('reg-email').value.trim();
+    const password = document.getElementById('reg-password').value;
+    const rol = document.querySelector('input[name="reg-rol"]:checked').value;
+    if (!nombre||!apellido||!telefono||!email||!password) { showToast('Completa todos los campos.','error'); return; }
+    if (password.length < 8) { showToast('La contrasena debe tener al menos 8 caracteres.','error'); return; }
+    try {
+        const res = await fetch(API_BASE_URL+'/api/auth/register', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({nombre,apellido,telefono,email,password,rol})
+        });
+        if (!res.ok) { const err = await res.json().catch(()=>({detail:'Error'})); throw new Error(err.detail||'Error al registrar'); }
+        showToast('Cuenta creada! Ahora podes iniciar sesion.','success');
+        switchAuthTab('tab-login');
+    } catch(e) { showToast(e.message,'error'); }
+}
+
+// ==========================================================================
+// VISIBILIDAD POR ROL
+// ==========================================================================
+function aplicarVisibilidad() {
+    const role = state.usuario ? state.usuario.role : null;
+    const btnOpen = document.getElementById('btn-open-auth');
+    const btnLogout = document.getElementById('btn-logout');
+    const labelUser = document.getElementById('auth-user-label');
+    if (state.usuario) {
+        btnOpen.style.display='none';
+        btnLogout.style.display='inline-block';
+        labelUser.style.display='inline-block';
+        labelUser.textContent = state.usuario.nombre+' ('+state.usuario.role+')';
+    } else {
+        btnOpen.style.display='inline-block';
+        btnLogout.style.display='none';
+        labelUser.style.display='none';
+    }
+    document.querySelectorAll('[data-protected]').forEach(el => {
+        el.style.display = (role === el.getAttribute('data-protected')) ? '' : 'none';
+    });
+    // re-render productos para actualizar botones de reserva segun rol
+    if (state.productos.length) {
+        renderProductos(state.productos, document.getElementById('sucursal-global').value);
+    }
+}
+
+// ==========================================================================
+// NAVEGACION
+// ==========================================================================
 document.querySelectorAll('.nav-link').forEach(btn => {
     btn.addEventListener('click', (e) => {
         document.querySelectorAll('.nav-link').forEach(b => b.classList.remove('active'));
         e.target.classList.add('active');
-
-        document.querySelectorAll('.seccion').forEach(s => {
-            s.classList.remove('activa');
-        });
-
+        document.querySelectorAll('.seccion').forEach(s => s.classList.remove('activa'));
         const targetId = e.target.getAttribute('data-target');
         const targetEl = document.getElementById(targetId);
         if (targetEl) {
             targetEl.classList.add('activa');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            window.scrollTo({top:0,behavior:'smooth'});
+            if (targetId==='seccion-inventario' && state.usuario && state.usuario.role==='empleado') cargarInventarioEmpleado();
+            if (targetId==='seccion-todas-ordenes' && state.usuario && state.usuario.role==='empleado') cargarTodasLasOrdenes();
+            if (targetId==='seccion-ordenes' && state.usuario && state.usuario.role==='cliente') cargarMisOrdenes();
         }
     });
 });
-
-// Selector global de sucursal
 document.getElementById('sucursal-global').addEventListener('change', (e) => {
     renderProductos(state.productos, e.target.value);
 });
+function cerrarModal(modalId) { document.getElementById(modalId).classList.remove('activo'); }
 
-// Toast flotante
-function showToast(mensaje, tipo = 'info') {
+// ==========================================================================
+// TOAST
+// ==========================================================================
+function showToast(mensaje, tipo='info') {
     const container = document.getElementById('toast-container');
     const toast = document.createElement('div');
-    toast.className = `toast ${tipo}`;
+    toast.className = 'toast '+tipo;
     toast.textContent = mensaje;
     container.appendChild(toast);
-
-    setTimeout(() => {
-        toast.remove();
-    }, 3800);
+    setTimeout(()=>toast.remove(), 3800);
 }
 
 // ==========================================================================
-// SECCIÓN 1: CATÁLOGO, STOCK & FILTROS
+// CATALOGO
 // ==========================================================================
-
 async function cargarSucursales() {
     try {
-        const res = await fetch(`${API_BASE_URL}/api/sucursales`);
+        const res = await fetch(API_BASE_URL+'/api/sucursales');
         if (res.ok) {
             state.sucursales = await res.json();
-            const selectGlobal = document.getElementById('sucursal-global');
-            selectGlobal.innerHTML = '<option value="todas">Todas las sucursales</option>';
+            const sel = document.getElementById('sucursal-global');
+            sel.innerHTML = '<option value="todas">Todas las sucursales</option>';
             state.sucursales.forEach(suc => {
                 const opt = document.createElement('option');
-                opt.value = suc.id;
-                opt.textContent = suc.nombre;
-                selectGlobal.appendChild(opt);
+                opt.value = suc.id; opt.textContent = suc.nombre;
+                sel.appendChild(opt);
             });
         }
-    } catch (e) {
-        console.warn('Backend no disponible para sucursales, usando lista por defecto.');
+    } catch(e) {
         state.sucursales = [
-            { id: 1, nombre: "Central Obelisco" },
-            { id: 2, nombre: "Palermo Soho" },
-            { id: 3, nombre: "Belgrano Tech" },
-            { id: 4, nombre: "Zona Norte Martínez" }
+            {id:1,nombre:"Central Obelisco"},{id:2,nombre:"Palermo Soho"},
+            {id:3,nombre:"Belgrano Tech"},{id:4,nombre:"Zona Norte Martinez"}
         ];
     }
 }
-
 async function cargarCatalogo() {
     const loadingEl = document.getElementById('loading-catalogo');
-    if (loadingEl) loadingEl.style.display = 'block';
-
+    if (loadingEl) loadingEl.style.display='block';
     try {
         await cargarSucursales();
-
-        const [resProd, resStock] = await Promise.all([
-            fetch(`${API_BASE_URL}/api/productos`),
-            fetch(`${API_BASE_URL}/api/stock`)
+        const [resProd,resStock] = await Promise.all([
+            fetch(API_BASE_URL+'/api/productos'),
+            fetch(API_BASE_URL+'/api/stock')
         ]);
-
         if (resProd.ok && resStock.ok) {
             const productos = await resProd.json();
             const stocks = await resStock.json();
-
             state.productos = productos.map(p => {
                 const stockMap = {};
                 state.sucursales.forEach(suc => {
-                    const itemStock = stocks.find(s => s.producto_id === p.id && s.sucursal_id === suc.id);
-                    stockMap[suc.id] = itemStock ? itemStock.stock_disponible : 0;
+                    const s = stocks.find(s=>s.producto_id===p.id && s.sucursal_id===suc.id);
+                    stockMap[suc.id] = s ? s.stock_disponible : 0;
                 });
-                return { ...p, stock: stockMap };
+                return {...p, stock:stockMap};
             });
-
-            if (loadingEl) loadingEl.style.display = 'none';
+            if (loadingEl) loadingEl.style.display='none';
             renderProductos(state.productos, document.getElementById('sucursal-global').value);
             return;
         }
-    } catch (error) {
-        console.warn('Conexión con backend falló, usando datos locales:', error);
-    }
-
-    // Fallback de contingencia
+    } catch(e) { console.warn('Usando datos locales:', e); }
     state.productos = [
-        { id: 1, nombre: "Notebook Dell XPS 15", categoria: "Laptops", precio: 2500, stock: { 1: 5, 2: 0, 3: 12, 4: 8 } },
-        { id: 2, nombre: "Notebook ThinkPad T14", categoria: "Laptops", precio: 1400, stock: { 1: 15, 2: 4, 3: 6, 4: 10 } },
-        { id: 3, nombre: "Monitor LG UltraWide 34\"", categoria: "Monitores", precio: 850, stock: { 1: 3, 2: 15, 3: 0, 4: 6 } },
-        { id: 4, nombre: "Teclado Mecánico Keychron K2", categoria: "Periféricos", precio: 120, stock: { 1: 10, 2: 20, 3: 5, 4: 0 } },
-        { id: 5, nombre: "Mouse Logitech MX Master 3S", categoria: "Periféricos", precio: 100, stock: { 1: 18, 2: 7, 3: 12, 4: 15 } },
-        { id: 6, nombre: "Auriculares Sony WH-1000XM5", categoria: "Audio", precio: 350, stock: { 1: 8, 2: 0, 3: 4, 4: 2 } },
-        { id: 7, nombre: "Disco SSD Samsung 980 Pro 2TB", categoria: "Componentes", precio: 200, stock: { 1: 25, 2: 14, 3: 10, 4: 18 } },
-        { id: 8, nombre: "Memoria RAM Corsair Vengeance 32GB", categoria: "Componentes", precio: 150, stock: { 1: 30, 2: 22, 3: 15, 4: 8 } }
+        {id:1,nombre:"Notebook Dell XPS 15",categoria:"Laptops",precio:2500,stock:{1:5,2:0,3:12,4:8}},
+        {id:2,nombre:"Notebook ThinkPad T14",categoria:"Laptops",precio:1400,stock:{1:15,2:4,3:6,4:10}},
+        {id:3,nombre:"Monitor LG UltraWide 34\"",categoria:"Monitores",precio:850,stock:{1:3,2:15,3:0,4:6}},
+        {id:4,nombre:"Teclado Keychron K2",categoria:"Perifericos",precio:120,stock:{1:10,2:20,3:5,4:0}},
+        {id:5,nombre:"Mouse Logitech MX Master 3S",categoria:"Perifericos",precio:100,stock:{1:18,2:7,3:12,4:15}},
+        {id:6,nombre:"Auriculares Sony WH-1000XM5",categoria:"Audio",precio:350,stock:{1:8,2:0,3:4,4:2}},
+        {id:7,nombre:"Disco SSD Samsung 980 Pro 2TB",categoria:"Componentes",precio:200,stock:{1:25,2:14,3:10,4:18}},
+        {id:8,nombre:"Memoria RAM Corsair 32GB DDR5",categoria:"Componentes",precio:150,stock:{1:30,2:22,3:15,4:8}}
     ];
-    if (loadingEl) loadingEl.style.display = 'none';
+    if (loadingEl) loadingEl.style.display='none';
     renderProductos(state.productos, document.getElementById('sucursal-global').value);
 }
-
-// Filtros de Categorías
 function filtrarPorTag(categoria, btnElement) {
     state.categoriaActiva = categoria;
-    document.querySelectorAll('.filtro-btn').forEach(b => b.classList.remove('activo'));
+    document.querySelectorAll('.filtro-btn').forEach(b=>b.classList.remove('activo'));
     if (btnElement) btnElement.classList.add('activo');
     renderProductos(state.productos, document.getElementById('sucursal-global').value);
 }
-
 function filtrarCategoria(categoria) {
     document.querySelectorAll('.filtro-btn').forEach(b => {
-        if (b.textContent.toLowerCase() === categoria.toLowerCase()) {
-            b.classList.add('activo');
-        } else {
-            b.classList.remove('activo');
-        }
+        if (b.textContent.toLowerCase()===categoria.toLowerCase()) b.classList.add('activo');
+        else b.classList.remove('activo');
     });
     filtrarPorTag(categoria, null);
-    const heading = document.getElementById('catalogo-heading');
-    if (heading) heading.scrollIntoView({ behavior: 'smooth' });
+    const h = document.getElementById('catalogo-heading');
+    if (h) h.scrollIntoView({behavior:'smooth'});
 }
-
-// Renderizado de Grilla de Productos
 function renderProductos(productos, sucursalFiltro) {
     const grilla = document.getElementById('grilla-productos');
     if (!grilla) return;
     grilla.innerHTML = '';
-
-    // Filtrar por categoría seleccionada
-    let productosFiltrados = productos;
+    let list = productos;
     if (state.categoriaActiva !== 'todos') {
-        productosFiltrados = productos.filter(p => 
-            (p.categoria && p.categoria.toLowerCase() === state.categoriaActiva.toLowerCase())
-        );
+        list = productos.filter(p => p.categoria && p.categoria.toLowerCase()===state.categoriaActiva.toLowerCase());
     }
-
-    if (productosFiltrados.length === 0) {
-        grilla.innerHTML = '<p class="text-sm text-muted">No hay productos en esta categoría o sucursal.</p>';
-        return;
-    }
-
-    productosFiltrados.forEach(prod => {
+    if (!list.length) { grilla.innerHTML = '<p class="text-sm text-muted">No hay productos en esta categoria.</p>'; return; }
+    const esCliente = state.usuario && state.usuario.role === 'cliente';
+    list.forEach(prod => {
         const card = document.createElement('div');
         card.className = 'card producto-card';
-        
         let chipsHtml = '';
         state.sucursales.forEach(suc => {
             if (sucursalFiltro !== 'todas' && String(sucursalFiltro) !== String(suc.id)) return;
-
-            const qty = (prod.stock && prod.stock[suc.id] !== undefined) ? prod.stock[suc.id] : 0;
-            let statusClass = 'stock-out';
-            let icon = '✗';
-            
-            if (qty > 5) {
-                statusClass = 'stock-ok';
-                icon = '✓';
-            } else if (qty > 0) {
-                statusClass = 'stock-low';
-                icon = '⚠';
-            }
-
-            chipsHtml += `<div class="chip ${statusClass}">
-                <span>${suc.nombre}</span>
-                <span>${qty} ${icon}</span>
-            </div>`;
+            const qty = (prod.stock && prod.stock[suc.id]!==undefined) ? prod.stock[suc.id] : 0;
+            let sc='stock-out', ic='x';
+            if (qty>5){sc='stock-ok';ic='v';}
+            else if(qty>0){sc='stock-low';ic='!';}
+            chipsHtml += '<div class="chip '+sc+'"><span>'+suc.nombre+'</span><span>'+qty+' '+ic+'</span></div>';
         });
-
-        const totalStock = prod.stock ? Object.values(prod.stock).reduce((a, b) => a + b, 0) : 0;
-
-        card.innerHTML = `
-            <div>
-                <h3 class="producto-nombre">${prod.nombre}</h3>
-                <p class="producto-categoria">${prod.categoria || 'Hardware'}</p>
-                <p class="producto-precio">$${Number(prod.precio).toLocaleString('es-AR')}</p>
-                <div class="stock-chips">
-                    ${chipsHtml}
-                </div>
-            </div>
-            <button class="btn btn-outline btn-block" ${totalStock === 0 ? 'disabled' : ''} onclick="abrirModalReserva(${prod.id})">
-                ${totalStock === 0 ? 'Sin Stock' : '⚡ Reservar (Click & Collect)'}
-            </button>
-        `;
+        const total = prod.stock ? Object.values(prod.stock).reduce((a,b)=>a+b,0) : 0;
+        const btnHtml = esCliente
+            ? '<button class="btn btn-outline btn-block"'+(total===0?' disabled':'')+' onclick="abrirModalReserva('+prod.id+')">'+(total===0?'Sin Stock':'&#9889; Reservar (Click &amp; Collect)')+'</button>'
+            : '<button class="btn btn-outline btn-block" disabled title="Inicia sesion como cliente" style="opacity:0.4;cursor:not-allowed;">Reservar (requiere cuenta)</button>';
+        card.innerHTML = '<div><h3 class="producto-nombre">'+prod.nombre+'</h3><p class="producto-categoria">'+(prod.categoria||'Hardware')+'</p><p class="producto-precio">$'+Number(prod.precio).toLocaleString('es-AR')+'</p><div class="stock-chips">'+chipsHtml+'</div></div>'+btnHtml;
         grilla.appendChild(card);
     });
 }
 
 // ==========================================================================
-// MODAL EMERGENTE DE RESERVA (PANTALLA EMERGENTE)
+// MODAL RESERVA
 // ==========================================================================
-
-function abrirModalReserva(productoId, sucursalPreseleccionada = null) {
-    const producto = state.productos.find(p => p.id === productoId);
+function abrirModalReserva(productoId, sucursalPreseleccionada=null) {
+    if (!state.usuario || state.usuario.role !== 'cliente') {
+        showToast('Debes iniciar sesion como cliente para reservar.','error');
+        abrirAuthModal(); return;
+    }
+    const producto = state.productos.find(p=>p.id===productoId);
     if (!producto) return;
-
     state.productoParaModal = producto;
-
-    // Actualizar vista previa del producto en el modal
     document.getElementById('modal-producto-id').value = producto.id;
     document.getElementById('modal-prod-nombre').textContent = producto.nombre;
-    document.getElementById('modal-prod-categoria').textContent = producto.categoria || 'Hardware';
-    document.getElementById('modal-prod-precio').textContent = `$${Number(producto.precio).toLocaleString('es-AR')}`;
-
-    // Poblar dropdown de sucursales que tengan stock disponible
+    document.getElementById('modal-prod-categoria').textContent = producto.categoria||'Hardware';
+    document.getElementById('modal-prod-precio').textContent = '$'+Number(producto.precio).toLocaleString('es-AR');
     const selectSucursal = document.getElementById('modal-reserva-sucursal');
     selectSucursal.innerHTML = '';
     let primeraConStock = null;
-
     state.sucursales.forEach(suc => {
         const stock = (producto.stock && producto.stock[suc.id]) || 0;
-        if (stock > 0) {
-            if (!primeraConStock) primeraConStock = suc.id;
-            const option = document.createElement('option');
-            option.value = suc.id;
-            option.textContent = `${suc.nombre} (${stock} un. disponibles)`;
-            option.dataset.max = stock;
-            if (sucursalPreseleccionada && String(suc.id) === String(sucursalPreseleccionada)) {
-                option.selected = true;
-                primeraConStock = suc.id;
-            }
-            selectSucursal.appendChild(option);
+        if (stock>0) {
+            if (!primeraConStock) primeraConStock=suc.id;
+            const o = document.createElement('option');
+            o.value=suc.id; o.textContent=suc.nombre+' ('+stock+' un. disponibles)'; o.dataset.max=stock;
+            if (sucursalPreseleccionada && String(suc.id)===String(sucursalPreseleccionada)){o.selected=true;primeraConStock=suc.id;}
+            selectSucursal.appendChild(o);
         }
     });
-
-    if (!primeraConStock) {
-        showToast('Este producto no tiene stock disponible para reserva en ninguna sucursal', 'error');
-        return;
-    }
-
-    // Resetear cantidad a 1 y recalcular
-    const inputCant = document.getElementById('modal-reserva-cantidad');
-    inputCant.value = 1;
+    if (!primeraConStock){showToast('Sin stock disponible en ninguna sucursal','error');return;}
+    document.getElementById('modal-reserva-cantidad').value=1;
     actualizarMaxCantidadModal();
-
-    // Abrir modal emergente
     document.getElementById('modal-flujo-reserva').classList.add('activo');
 }
-
-// Cerrar modal de reserva
-document.getElementById('btn-cerrar-modal-reserva').addEventListener('click', cerrarModalReserva);
-document.getElementById('modal-flujo-reserva').addEventListener('click', (e) => {
-    if (e.target.id === 'modal-flujo-reserva') cerrarModalReserva();
+document.getElementById('btn-cerrar-modal-reserva').addEventListener('click',cerrarModalReserva);
+document.getElementById('modal-flujo-reserva').addEventListener('click',(e)=>{if(e.target.id==='modal-flujo-reserva')cerrarModalReserva();});
+function cerrarModalReserva(){document.getElementById('modal-flujo-reserva').classList.remove('activo');}
+document.getElementById('modal-reserva-sucursal').addEventListener('change',actualizarMaxCantidadModal);
+document.getElementById('modal-reserva-cantidad').addEventListener('input',recalcularSubtotalModal);
+document.getElementById('qty-btn-minus').addEventListener('click',()=>{
+    const i=document.getElementById('modal-reserva-cantidad');
+    let v=parseInt(i.value)||1;if(v>1){i.value=v-1;recalcularSubtotalModal();}
 });
-
-function cerrarModalReserva() {
-    document.getElementById('modal-flujo-reserva').classList.remove('activo');
-}
-
-// Controles de cantidad (+ / -) y subtotal
-document.getElementById('modal-reserva-sucursal').addEventListener('change', actualizarMaxCantidadModal);
-document.getElementById('modal-reserva-cantidad').addEventListener('input', recalcularSubtotalModal);
-
-document.getElementById('qty-btn-minus').addEventListener('click', () => {
-    const input = document.getElementById('modal-reserva-cantidad');
-    let val = parseInt(input.value) || 1;
-    if (val > 1) {
-        input.value = val - 1;
-        recalcularSubtotalModal();
-    }
+document.getElementById('qty-btn-plus').addEventListener('click',()=>{
+    const i=document.getElementById('modal-reserva-cantidad');
+    const m=parseInt(i.max)||100;let v=parseInt(i.value)||1;if(v<m){i.value=v+1;recalcularSubtotalModal();}
 });
-
-document.getElementById('qty-btn-plus').addEventListener('click', () => {
-    const input = document.getElementById('modal-reserva-cantidad');
-    const max = parseInt(input.max) || 100;
-    let val = parseInt(input.value) || 1;
-    if (val < max) {
-        input.value = val + 1;
-        recalcularSubtotalModal();
-    }
-});
-
-function actualizarMaxCantidadModal() {
-    const select = document.getElementById('modal-reserva-sucursal');
-    const inputCant = document.getElementById('modal-reserva-cantidad');
-    const infoSpan = document.getElementById('modal-max-stock-info');
-    const hintSpan = document.getElementById('modal-sucursal-hint');
-    
-    if (select.selectedOptions.length > 0) {
-        const max = parseInt(select.selectedOptions[0].dataset.max) || 1;
-        inputCant.max = max;
-        if (parseInt(inputCant.value) > max) {
-            inputCant.value = max;
-        }
-        infoSpan.textContent = `Stock disponible: ${max} un.`;
-        hintSpan.textContent = `Retiro inmediato disponible en ${select.selectedOptions[0].text.split('(')[0].trim()}`;
+function actualizarMaxCantidadModal(){
+    const sel=document.getElementById('modal-reserva-sucursal');
+    const inp=document.getElementById('modal-reserva-cantidad');
+    if(sel.selectedOptions.length>0){
+        const max=parseInt(sel.selectedOptions[0].dataset.max)||1;
+        inp.max=max;if(parseInt(inp.value)>max)inp.value=max;
+        document.getElementById('modal-max-stock-info').textContent='Stock disponible: '+max+' un.';
+        document.getElementById('modal-sucursal-hint').textContent='Retiro en '+sel.selectedOptions[0].text.split('(')[0].trim();
     }
     recalcularSubtotalModal();
 }
-
-function recalcularSubtotalModal() {
-    if (!state.productoParaModal) return;
-    const inputCant = document.getElementById('modal-reserva-cantidad');
-    let cant = parseInt(inputCant.value) || 1;
-    const subtotal = cant * Number(state.productoParaModal.precio);
-    document.getElementById('modal-resumen-subtotal').textContent = `$${subtotal.toLocaleString('es-AR')}`;
+function recalcularSubtotalModal(){
+    if(!state.productoParaModal)return;
+    const c=parseInt(document.getElementById('modal-reserva-cantidad').value)||1;
+    document.getElementById('modal-resumen-subtotal').textContent='$'+(c*Number(state.productoParaModal.precio)).toLocaleString('es-AR');
 }
-
-// Enviar Reserva Atómica desde el Modal
-document.getElementById('form-reserva-modal').addEventListener('submit', async (e) => {
+document.getElementById('form-reserva-modal').addEventListener('submit',async(e)=>{
     e.preventDefault();
-    
-    const btnSubmit = document.getElementById('btn-submit-reserva');
-    btnSubmit.disabled = true;
-    btnSubmit.textContent = 'Bloqueando stock en inventario...';
-
-    const productoId = parseInt(document.getElementById('modal-producto-id').value);
-    const sucursalId = parseInt(document.getElementById('modal-reserva-sucursal').value);
-    const cantidad = parseInt(document.getElementById('modal-reserva-cantidad').value);
-    const email = document.getElementById('modal-reserva-email').value.trim();
-
-    const payload = {
-        sucursal_id: sucursalId,
-        items: [{ producto_id: productoId, cantidad: cantidad }],
-        usuario_email: email || null
-    };
-
-    try {
-        const res = await fetch(`${API_BASE_URL}/api/reservas`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+    const btn=document.getElementById('btn-submit-reserva');
+    btn.disabled=true;btn.textContent='Bloqueando stock...';
+    const productoId=parseInt(document.getElementById('modal-producto-id').value);
+    const sucursalId=parseInt(document.getElementById('modal-reserva-sucursal').value);
+    const cantidad=parseInt(document.getElementById('modal-reserva-cantidad').value);
+    try{
+        const res=await fetch(API_BASE_URL+'/api/reservas',{
+            method:'POST',headers:getAuthHeaders(),
+            body:JSON.stringify({sucursal_id:sucursalId,items:[{producto_id:productoId,cantidad}]})
         });
-
-        if (!res.ok) {
-            const errData = await res.json().catch(() => ({ detail: 'Error al reservar' }));
-            throw new Error(errData.detail || 'Conflicto de stock en la reserva');
-        }
-
-        const data = await res.json();
-
-        // Cerrar modal de formulario
+        if(!res.ok){const err=await res.json().catch(()=>({detail:'Error'}));throw new Error(err.detail||'Error al reservar');}
+        const data=await res.json();
         cerrarModalReserva();
-
-        // Mostrar Modal Emergente de Éxito
-        document.getElementById('modal-exito-orden-id').textContent = `ORD-${data.orden_id}`;
-        document.getElementById('modal-exito-pin').textContent = data.pin;
-        document.getElementById('modal-exito-vencimiento').textContent = new Date(data.vencimiento).toLocaleString('es-AR');
+        document.getElementById('modal-exito-orden-id').textContent='ORD-'+data.orden_id;
+        document.getElementById('modal-exito-pin').textContent=data.pin;
+        document.getElementById('modal-exito-vencimiento').textContent=new Date(data.vencimiento).toLocaleString('es-AR');
         document.getElementById('modal-exito-reserva').classList.add('activo');
-
-        showToast('¡Reserva confirmada con bloqueo pesimista en base de datos!', 'success');
-
-        // Recargar inventario para actualizar chips en tiempo real
+        showToast('Reserva confirmada!','success');
         cargarCatalogo();
-
-    } catch (error) {
-        showToast(error.message, 'error');
-    } finally {
-        btnSubmit.disabled = false;
-        btnSubmit.textContent = '🔒 Confirmar Reserva Atómica';
-    }
+    }catch(err){showToast(err.message,'error');}
+    finally{btn.disabled=false;btn.textContent='Confirmar Reserva Atomica';}
 });
-
-// Botones del Modal de Éxito
-document.getElementById('btn-copiar-pin').addEventListener('click', () => {
-    const pin = document.getElementById('modal-exito-pin').textContent;
-    navigator.clipboard.writeText(pin).then(() => {
-        showToast('¡PIN de retiro copiado al portapapeles!', 'success');
-    }).catch(() => {
-        showToast(`PIN: ${pin}`, 'info');
-    });
+document.getElementById('btn-copiar-pin').addEventListener('click',()=>{
+    const pin=document.getElementById('modal-exito-pin').textContent;
+    navigator.clipboard.writeText(pin).then(()=>showToast('PIN copiado!','success')).catch(()=>showToast('PIN: '+pin,'info'));
 });
-
-document.getElementById('btn-cerrar-exito').addEventListener('click', () => {
+document.getElementById('btn-cerrar-exito').addEventListener('click',()=>{
     document.getElementById('modal-exito-reserva').classList.remove('activo');
-    // Pre-cargar ID en la sección de Órdenes y navegar allí
-    const ordenTexto = document.getElementById('modal-exito-orden-id').textContent.replace('ORD-', '');
-    document.getElementById('buscar-orden-id').value = ordenTexto;
+    const id=document.getElementById('modal-exito-orden-id').textContent.replace('ORD-','');
+    document.getElementById('buscar-orden-id').value=id;
     document.querySelector('[data-target="seccion-ordenes"]').click();
 });
 
 // ==========================================================================
-// SECCIÓN 2: ASISTENTE INTELIGENTE IA
+// ASISTENTE IA
 // ==========================================================================
+function aplicarSugerencia(texto){document.getElementById('input-consulta-ia').value=texto;consultarAsistenteIA();}
+document.getElementById('btn-consultar-ia').addEventListener('click',consultarAsistenteIA);
+document.getElementById('input-consulta-ia').addEventListener('keydown',(e)=>{if(e.key==='Enter')consultarAsistenteIA();});
+async function consultarAsistenteIA(){
+    const input=document.getElementById('input-consulta-ia');
+    const mensaje=input.value.trim();
+    if(!mensaje){showToast('Escribe tu consulta','error');return;}
+    const btn=document.getElementById('btn-consultar-ia');
+    btn.disabled=true;btn.textContent='Analizando inventario...';
+    const sv=document.getElementById('sucursal-global').value;
+    const sucursalId=sv!=='todas'?parseInt(sv):null;
+    try{
+        const res=await fetch(API_BASE_URL+'/api/ia/consultar',{
+            method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({mensaje,sucursal_id:sucursalId})
+        });
+        if(!res.ok)throw new Error('Error al consultar el asistente');
+        const data=await res.json();
+        state.ultimaRecomendacionIA=data;
+        const container=document.getElementById('ia-resultado');
+        container.style.display='block';
+        document.getElementById('ia-modelo-nombre').textContent=data.modelo_utilizado;
+        document.getElementById('ia-sucursal-nombre').textContent='Sucursal: '+data.sucursal_nombre;
+        document.getElementById('ia-texto-salida').innerHTML=data.respuesta.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>');
+        const grilla=document.getElementById('ia-productos-recomendados');
+        grilla.innerHTML='';
+        const esCliente=state.usuario&&state.usuario.role==='cliente';
+        data.productos.forEach(p=>{
+            const card=document.createElement('div');card.className='card producto-card';
+            const btnR=esCliente
+                ?'<button class="btn btn-outline btn-block mt-15" onclick="abrirModalReserva('+p.id+','+p.sucursal_id+')">Reservar</button>'
+                :'<button class="btn btn-outline btn-block mt-15" disabled style="opacity:0.4;">Inicia sesion para reservar</button>';
+            card.innerHTML='<div><h3 class="producto-nombre">'+p.nombre+'</h3><p class="producto-categoria">'+p.categoria+'</p><p class="producto-precio">$'+Number(p.precio).toLocaleString('es-AR')+'</p><div class="chip stock-ok mt-20" style="display:inline-block;"><span>v '+p.stock_disponible+' disp. en '+p.sucursal_nombre+'</span></div></div>'+btnR;
+            grilla.appendChild(card);
+        });
+        document.getElementById('ia-total-monto').textContent='$'+Number(data.total).toLocaleString('es-AR');
+        showToast('Recomendacion generada!','success');
+        container.scrollIntoView({behavior:'smooth'});
+    }catch(e){showToast(e.message,'error');}
+    finally{btn.disabled=false;btn.textContent='Consultar Asistente';}
+}
+document.getElementById('btn-ia-reservar').addEventListener('click',()=>{
+    if(!state.ultimaRecomendacionIA||!state.ultimaRecomendacionIA.productos.length){showToast('Sin productos recomendados','error');return;}
+    const p=state.ultimaRecomendacionIA.productos[0];
+    abrirModalReserva(p.id,state.ultimaRecomendacionIA.sucursal_id);
+});
 
-function aplicarSugerencia(texto) {
-    document.getElementById('input-consulta-ia').value = texto;
-    consultarAsistenteIA();
+// ==========================================================================
+// CLIENTE: MIS ORDENES
+// ==========================================================================
+async function cargarMisOrdenes(){
+    const resDiv=document.getElementById('orden-resultado');
+    resDiv.style.display='block';resDiv.innerHTML='<p class="text-muted">Cargando tus ordenes...</p>';
+    try{
+        const res=await fetch(API_BASE_URL+'/api/mis-ordenes',{headers:getAuthHeaders()});
+        if(!res.ok)throw new Error('No se pudieron cargar las ordenes');
+        const ordenes=await res.json();
+        if(!ordenes.length){resDiv.innerHTML='<p class="text-muted">No tienes ordenes de reserva aun.</p>';return;}
+        let html='';
+        ordenes.forEach(o=>{
+            const suc=state.sucursales.find(s=>s.id===o.sucursal_id)||{nombre:'Sucursal #'+o.sucursal_id};
+            const ec=o.estado==='retirada'?'stock-ok':o.estado==='cancelada'?'stock-out':'stock-low';
+            html+='<div class="card mb-20" style="border-left:4px solid var(--cyan);"><div style="display:flex;justify-content:space-between;align-items:center;"><h3>Orden ORD-'+o.id+'</h3><span class="chip '+ec+'" style="display:inline-block;">'+o.estado.toUpperCase()+'</span></div><p><strong>Sucursal:</strong> '+suc.nombre+'</p><p><strong>Total:</strong> $'+Number(o.total).toLocaleString('es-AR')+'</p><p><strong>Creada:</strong> '+(o.fecha_creacion?new Date(o.fecha_creacion).toLocaleString('es-AR'):'-')+'</p>'+(o.pin?'<div class="pin-display-card mt-10"><span class="pin-label">TU PIN</span><div class="pin-code">'+o.pin+'</div></div>':'')+((o.estado==='reservada'||o.estado==='lista_retiro')?'<button class="btn btn-outline mt-10" onclick="cancelarReserva('+o.id+')">Cancelar esta reserva</button>':'')+'</div>';
+        });
+        resDiv.innerHTML=html;
+    }catch(e){resDiv.innerHTML='<p class="text-muted">'+e.message+'</p>';}
+}
+async function cancelarReserva(ordenId){
+    if(!confirm('Estas seguro de cancelar esta reserva?'))return;
+    const pinInput=prompt('Ingresa tu PIN para confirmar la cancelacion:');
+    if(!pinInput)return;
+    try{
+        const res=await fetch(API_BASE_URL+'/api/ordenes/'+ordenId+'/cancelar',{
+            method:'POST',headers:getAuthHeaders(),body:JSON.stringify({pin:pinInput})
+        });
+        if(!res.ok){const err=await res.json().catch(()=>({detail:'Error'}));throw new Error(err.detail);}
+        showToast('Reserva cancelada.','success');cargarMisOrdenes();cargarCatalogo();
+    }catch(e){showToast(e.message,'error');}
+}
+document.getElementById('btn-buscar-orden').addEventListener('click',async()=>{
+    let v=document.getElementById('buscar-orden-id').value.trim();
+    if(!v){showToast('Ingresa un ID de orden','error');return;}
+    const id=parseInt(v.replace(/^ORD-/i,''));
+    if(isNaN(id)){showToast('Formato invalido','error');return;}
+    try{
+        const res=await fetch(API_BASE_URL+'/api/ordenes/'+id);
+        if(!res.ok)throw new Error('Orden no encontrada');
+        const o=await res.json();
+        const suc=state.sucursales.find(s=>s.id===o.sucursal_id)||{nombre:'Sucursal #'+o.sucursal_id};
+        const items=o.items.map(it=>'<li>Producto #'+it.producto_id+' - Cant: '+it.cantidad+' ($'+Number(it.precio_unitario).toLocaleString('es-AR')+' c/u)</li>').join('');
+        const resDiv=document.getElementById('orden-resultado');
+        resDiv.style.display='block';
+        resDiv.innerHTML='<h3>Orden #ORD-'+o.id+'</h3><p><strong>Estado:</strong> <span class="chip '+(o.estado==='retirada'?'stock-ok':'stock-low')+'" style="display:inline-block;margin-left:5px;">'+o.estado.toUpperCase()+'</span></p><p><strong>Sucursal:</strong> '+suc.nombre+'</p><p><strong>Total:</strong> $'+Number(o.total).toLocaleString('es-AR')+'</p><p><strong>Creada:</strong> '+new Date(o.fecha_creacion).toLocaleString('es-AR')+'</p><div class="mt-20"><strong>Articulos:</strong><ul style="margin-left:20px;margin-top:5px;">'+items+'</ul></div>';
+    }catch(e){showToast(e.message,'error');document.getElementById('orden-resultado').style.display='none';}
+});
+
+// ==========================================================================
+// EMPLEADO: INVENTARIO
+// ==========================================================================
+async function cargarInventarioEmpleado(){
+    const tbody=document.getElementById('tbody-inventario');
+    if(!tbody)return;
+    tbody.innerHTML='<tr><td colspan="8" class="text-center text-muted">Cargando...</td></tr>';
+    try{
+        const res=await fetch(API_BASE_URL+'/api/inventario',{headers:getAuthHeaders()});
+        if(!res.ok)throw new Error('No se pudo cargar el inventario');
+        const items=await res.json();
+        if(!items.length){tbody.innerHTML='<tr><td colspan="8" class="text-center text-muted">Sin datos.</td></tr>';return;}
+        tbody.innerHTML=items.map(item=>'<tr><td>'+( item.producto_nombre||'-')+'</td><td><code>'+(item.sku||'-')+'</code></td><td>'+(item.categoria||'-')+'</td><td>$'+Number(item.precio||0).toLocaleString('es-AR')+'</td><td>'+(item.sucursal_nombre||'-')+'</td><td class="'+(item.stock_disponible<=item.stock_minimo?'text-red':'text-green')+'">'+item.stock_disponible+'</td><td>'+item.stock_reservado+'</td><td><button class="btn btn-outline btn-sm" onclick="abrirEditarProducto('+item.producto_id+',\''+( item.producto_nombre||'').replace(/'/g,"\\'")+'\',\''+(item.categoria||'').replace(/'/g,"\\'")+'\','+( item.precio||0)+')">Editar</button> <button class="btn btn-sm" style="background:#e53e3e;color:#fff;" onclick="eliminarProducto('+item.producto_id+')">Eliminar</button></td></tr>').join('');
+    }catch(e){tbody.innerHTML='<tr><td colspan="8" class="text-center text-muted">'+e.message+'</td></tr>';}
+}
+function abrirModalNuevoProducto(){
+    document.getElementById('modal-producto-titulo').textContent='Nuevo Producto';
+    ['prod-form-id','prod-form-nombre','prod-form-descripcion','prod-form-categoria','prod-form-precio','prod-form-sku'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('prod-form-sku').disabled=false;
+
+    // Mostrar tabla de stock inicial, ocultar la de edición
+    document.getElementById('prod-form-stock-nuevo').style.display='block';
+    document.getElementById('prod-form-stock-editar').style.display='none';
+
+    // Poblar filas de sucursales con checkboxes para seleccionar en cuáles se venderá
+    const tbody=document.getElementById('prod-form-stock-nuevo-tbody');
+    const sucursales = state.sucursales && state.sucursales.length ? state.sucursales : [];
+    if(sucursales.length){
+        tbody.innerHTML=sucursales.map((s, idx)=>
+            `<tr>
+                <td style="padding:6px 4px;text-align:center;">
+                    <input type="checkbox" id="stock-nuevo-check-${s.id}" ${idx===0 ? 'checked' : ''}
+                        onchange="toggleStockInputs(${s.id})"
+                        style="width:16px;height:16px;cursor:pointer;accent-color:var(--cyan);">
+                </td>
+                <td style="padding:6px 8px;font-weight:500;">${s.nombre}</td>
+                <td style="padding:6px 8px;text-align:center;">
+                    <input type="number" min="1" value="${idx===0 ? 5 : 0}"
+                        id="stock-nuevo-disp-${s.id}"
+                        ${idx===0 ? '' : 'disabled'}
+                        oninput="onStockInputChanged(${s.id})"
+                        class="form-input" style="width:70px;text-align:center;padding:4px 6px;">
+                </td>
+                <td style="padding:6px 8px;text-align:center;">
+                    <input type="number" min="1" value="2"
+                        id="stock-nuevo-min-${s.id}"
+                        ${idx===0 ? '' : 'disabled'}
+                        class="form-input" style="width:70px;text-align:center;padding:4px 6px;">
+                </td>
+            </tr>`
+        ).join('');
+    } else {
+        tbody.innerHTML='<tr><td colspan="4" style="padding:6px 8px;color:var(--text-muted);">No se pudieron cargar las sucursales.</td></tr>';
+    }
+
+    document.getElementById('modal-producto-form').classList.add('activo');
 }
 
-document.getElementById('btn-consultar-ia').addEventListener('click', consultarAsistenteIA);
-document.getElementById('input-consulta-ia').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') consultarAsistenteIA();
-});
-
-async function consultarAsistenteIA() {
-    const input = document.getElementById('input-consulta-ia');
-    const mensaje = input.value.trim();
-    if (!mensaje) {
-        showToast('Por favor escribe tu consulta para el Asistente IA', 'error');
-        return;
-    }
-
-    const btn = document.getElementById('btn-consultar-ia');
-    btn.disabled = true;
-    btn.textContent = 'Analizando inventario...';
-
-    const sucursalVal = document.getElementById('sucursal-global').value;
-    const sucursalId = sucursalVal !== 'todas' ? parseInt(sucursalVal) : null;
-
-    try {
-        const res = await fetch(`${API_BASE_URL}/api/ia/consultar`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mensaje: mensaje, sucursal_id: sucursalId })
-        });
-
-        if (!res.ok) {
-            throw new Error('No se pudo procesar la consulta con el asistente');
-        }
-
-        const data = await res.json();
-        state.ultimaRecomendacionIA = data;
-
-        const container = document.getElementById('ia-resultado');
-        container.style.display = 'block';
-
-        document.getElementById('ia-modelo-nombre').textContent = data.modelo_utilizado;
-        document.getElementById('ia-sucursal-nombre').textContent = `Sucursal asignada: ${data.sucursal_nombre}`;
-        document.getElementById('ia-texto-salida').innerHTML = data.respuesta.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-
-        // Renderizar productos recomendados
-        const prodsGrilla = document.getElementById('ia-productos-recomendados');
-        prodsGrilla.innerHTML = '';
-        data.productos.forEach(p => {
-            const card = document.createElement('div');
-            card.className = 'card producto-card';
-            card.innerHTML = `
-                <div>
-                    <h3 class="producto-nombre">${p.nombre}</h3>
-                    <p class="producto-categoria">${p.categoria}</p>
-                    <p class="producto-precio">$${Number(p.precio).toLocaleString('es-AR')}</p>
-                    <div class="chip stock-ok mt-20" style="display: inline-block;">
-                        <span>✓ ${p.stock_disponible} unidades disponibles en ${p.sucursal_nombre}</span>
-                    </div>
-                </div>
-                <button class="btn btn-outline btn-block mt-15" onclick="abrirModalReserva(${p.id}, ${p.sucursal_id})">
-                    Reservar este producto
-                </button>
-            `;
-            prodsGrilla.appendChild(card);
-        });
-
-        document.getElementById('ia-total-monto').textContent = `$${Number(data.total).toLocaleString('es-AR')}`;
-
-        showToast('Recomendación generada con stock validado en tiempo real', 'success');
-        container.scrollIntoView({ behavior: 'smooth' });
-
-    } catch (e) {
-        showToast(e.message, 'error');
-    } finally {
-        btn.disabled = false;
-        btn.textContent = 'Consultar Asistente';
+function toggleStockInputs(sucursalId) {
+    const chk = document.getElementById('stock-nuevo-check-' + sucursalId);
+    const disp = document.getElementById('stock-nuevo-disp-' + sucursalId);
+    const min = document.getElementById('stock-nuevo-min-' + sucursalId);
+    if (!chk || !disp || !min) return;
+    if (chk.checked) {
+        disp.disabled = false;
+        min.disabled = false;
+        if (parseInt(disp.value) <= 0) disp.value = 5;
+        disp.focus();
+    } else {
+        disp.disabled = true;
+        min.disabled = true;
+        disp.value = 0;
     }
 }
 
-// Botón de 1-clic para reservar la recomendación completa de la IA
-document.getElementById('btn-ia-reservar').addEventListener('click', () => {
-    if (!state.ultimaRecomendacionIA || !state.ultimaRecomendacionIA.productos.length) {
-        showToast('No hay productos recomendados para reservar', 'error');
-        return;
+function onStockInputChanged(sucursalId) {
+    const chk = document.getElementById('stock-nuevo-check-' + sucursalId);
+    const disp = document.getElementById('stock-nuevo-disp-' + sucursalId);
+    if (!chk || !disp) return;
+    if (parseInt(disp.value) > 0 && !chk.checked) {
+        chk.checked = true;
     }
+}
 
-    const primerProd = state.ultimaRecomendacionIA.productos[0];
-    const sucursalId = state.ultimaRecomendacionIA.sucursal_id;
+async function abrirEditarProducto(id, nombre, categoria, precio){
+    document.getElementById('modal-producto-titulo').textContent='Editar Producto';
+    document.getElementById('prod-form-id').value=id;
+    document.getElementById('prod-form-nombre').value=nombre;
+    document.getElementById('prod-form-categoria').value=categoria;
+    document.getElementById('prod-form-precio').value=precio;
+    document.getElementById('prod-form-sku').value='';
+    document.getElementById('prod-form-sku').disabled=true;
+    document.getElementById('prod-form-descripcion').value='';
 
-    abrirModalReserva(primerProd.id, sucursalId);
-    showToast(`Abriendo reserva para ${primerProd.nombre} en ${state.ultimaRecomendacionIA.sucursal_nombre}`, 'info');
-});
+    // Mostrar tabla de edición de stock, ocultar la de creación
+    document.getElementById('prod-form-stock-nuevo').style.display='none';
+    document.getElementById('prod-form-stock-editar').style.display='block';
 
-// ==========================================================================
-// SECCIÓN 3: GESTIÓN DE RETIRO EN MOSTRADOR CON PIN
-// ==========================================================================
+    await recargarStockEditar(id);
+    document.getElementById('modal-producto-form').classList.add('activo');
+}
 
-document.getElementById('btn-buscar-orden').addEventListener('click', async () => {
-    let inputVal = document.getElementById('buscar-orden-id').value.trim();
-    if (!inputVal) {
-        showToast('Ingresá un ID de orden', 'error');
-        return;
-    }
-
-    const ordenId = parseInt(inputVal.replace(/^ORD-/i, ''));
-    if (isNaN(ordenId)) {
-        showToast('Formato de orden inválido. Ingresá un número como 1 o ORD-1', 'error');
-        return;
-    }
-
-    try {
-        const res = await fetch(`${API_BASE_URL}/api/ordenes/${ordenId}`);
-        if (!res.ok) {
-            throw new Error('Orden no encontrada');
+async function recargarStockEditar(productoId) {
+    const tbody=document.getElementById('prod-form-stock-editar-tbody');
+    tbody.innerHTML='<tr><td colspan="5" style="padding:6px 8px;color:var(--text-muted);">Cargando stock...</td></tr>';
+    try{
+        const res=await fetch(API_BASE_URL+'/api/inventario',{headers:getAuthHeaders()});
+        if(!res.ok) throw new Error('Error al cargar inventario');
+        const items=await res.json();
+        const filas=items.filter(i=>i.producto_id===Number(productoId));
+        
+        if(!filas.length){
+            tbody.innerHTML='<tr><td colspan="5" style="padding:6px 8px;color:var(--text-muted);">Sin stock en ninguna sucursal actualmente. Podés asignarlo abajo.</td></tr>';
+        } else {
+            tbody.innerHTML=filas.map(f=>
+                `<tr id="inv-row-${f.inventario_id}">
+                    <td style="padding:4px 8px;">${f.sucursal_nombre||'Sucursal #'+f.sucursal_id}</td>
+                    <td style="padding:4px 8px;text-align:center;">
+                        <input type="number" min="0" value="${f.stock_disponible}"
+                            id="stock-edit-disp-${f.inventario_id}"
+                            class="form-input" style="width:70px;text-align:center;padding:4px 6px;">
+                    </td>
+                    <td style="padding:4px 8px;text-align:center;color:var(--text-muted);">${f.stock_reservado}</td>
+                    <td style="padding:4px 8px;text-align:center;">
+                        <input type="number" min="0" value="${f.stock_minimo}"
+                            id="stock-edit-min-${f.inventario_id}"
+                            class="form-input" style="width:70px;text-align:center;padding:4px 6px;">
+                    </td>
+                    <td style="padding:4px 8px;text-align:center;white-space:nowrap;">
+                        <button type="button" class="btn btn-outline btn-sm" onclick="guardarStockSucursal(${f.inventario_id})">
+                            Guardar
+                        </button>
+                        <button type="button" class="btn btn-sm" style="background:#e53e3e;color:#fff;margin-left:4px;" title="Quitar de esta sucursal" onclick="quitarProductoSucursal(${f.inventario_id}, ${productoId})">
+                            ✕
+                        </button>
+                    </td>
+                </tr>`
+            ).join('');
         }
 
-        const orden = await res.json();
-        const sucursal = state.sucursales.find(s => s.id === orden.sucursal_id) || { nombre: `Sucursal #${orden.sucursal_id}` };
-        
-        const resDiv = document.getElementById('orden-resultado');
-        resDiv.style.display = 'block';
-
-        let itemsHtml = orden.items.map(it => `<li>Producto #${it.producto_id} - Cantidad: ${it.cantidad} ($${Number(it.precio_unitario).toLocaleString('es-AR')} c/u)</li>`).join('');
-
-        resDiv.innerHTML = `
-            <h3>Detalles de la Orden #ORD-${orden.id}</h3>
-            <p><strong>Estado Actual:</strong> <span class="chip ${orden.estado === 'retirada' ? 'stock-ok' : 'stock-low'}" style="display:inline-block; margin-left:5px;">${orden.estado.toUpperCase()}</span></p>
-            <p><strong>Sucursal de Retiro:</strong> ${sucursal.nombre}</p>
-            <p><strong>Total de la Orden:</strong> $${Number(orden.total).toLocaleString('es-AR')}</p>
-            <p><strong>Fecha de Creación:</strong> ${new Date(orden.fecha_creacion).toLocaleString('es-AR')}</p>
-            <div class="mt-20">
-                <strong>Artículos de la Reserva:</strong>
-                <ul style="margin-left: 20px; margin-top: 5px;">${itemsHtml}</ul>
-            </div>
-            
-            ${(orden.estado === 'reservada' || orden.estado === 'lista_retiro') ? `
-                <div class="mt-20 info-box">
-                    <label><strong>Confirmar Retiro en Mostrador</strong></label>
-                    <p class="text-sm text-muted">El personal del local debe validar el PIN de 6 dígitos que presentó el cliente.</p>
-                    <div class="search-bar mt-15">
-                        <input type="text" id="pin-retiro-input" class="form-input" placeholder="Ingresá PIN de 6 dígitos (ej: 0C3G29)">
-                        <button onclick="confirmarRetiro(${orden.id})" class="btn btn-primary">Validar PIN y Entregar</button>
-                    </div>
-                </div>
-            ` : '<div class="mt-20 text-green font-bold">✓ Esta orden ya fue retirada y el stock fue descontado permanentemente del inventario.</div>'}
-        `;
-
-    } catch (error) {
-        showToast(error.message, 'error');
-        document.getElementById('orden-resultado').style.display = 'none';
+        // Llenar selector de sucursales disponibles para agregar
+        const selectNueva = document.getElementById('prod-form-nueva-sucursal');
+        if (selectNueva) {
+            const sucursalesYaAsignadas = new Set(filas.map(f=>f.sucursal_id));
+            const disponibles = (state.sucursales||[]).filter(s=>!sucursalesYaAsignadas.has(s.id));
+            if (disponibles.length) {
+                selectNueva.innerHTML = disponibles.map(s=>`<option value="${s.id}">${s.nombre}</option>`).join('');
+                document.getElementById('prod-form-agregar-sucursal-wrap').style.display='block';
+            } else {
+                document.getElementById('prod-form-agregar-sucursal-wrap').style.display='none';
+            }
+        }
+    }catch(e){
+        tbody.innerHTML=`<tr><td colspan="5" style="padding:6px 8px;color:var(--text-muted);">${e.message}</td></tr>`;
     }
-});
+}
 
-async function confirmarRetiro(ordenId) {
-    const pin = document.getElementById('pin-retiro-input').value.trim();
-    if (!pin) {
-        showToast('Ingresá el PIN de seguridad', 'error');
-        return;
-    }
+async function guardarProducto(){
+    const id=document.getElementById('prod-form-id').value;
+    const nombre=document.getElementById('prod-form-nombre').value.trim();
+    const descripcion=document.getElementById('prod-form-descripcion').value.trim();
+    const categoria=document.getElementById('prod-form-categoria').value.trim();
+    const precio=parseFloat(document.getElementById('prod-form-precio').value);
+    const sku=document.getElementById('prod-form-sku').value.trim();
+    if(!nombre||!precio){showToast('Nombre y precio son obligatorios.','error');return;}
+    try{
+        let res;
+        if(id){
+            // Edición: actualiza los datos del producto
+            res=await fetch(API_BASE_URL+'/api/productos/'+id,{method:'PUT',headers:getAuthHeaders(),body:JSON.stringify({nombre,descripcion,categoria,precio})});
+        }else{
+            if(!sku){showToast('SKU obligatorio para productos nuevos.','error');return;}
+            // Crear: recopilar ÚNICAMENTE las sucursales marcadas con stock > 0
+            const stockPorSucursal = [];
+            (state.sucursales||[]).forEach(s=>{
+                const chk = document.getElementById('stock-nuevo-check-'+s.id);
+                const disp = parseInt(document.getElementById('stock-nuevo-disp-'+s.id)?.value||'0',10)||0;
+                const min = parseInt(document.getElementById('stock-nuevo-min-'+s.id)?.value||'2',10)||2;
+                if ((chk && chk.checked) || disp > 0) {
+                    stockPorSucursal.push({
+                        sucursal_id: s.id,
+                        stock_inicial: Math.max(0, disp),
+                        stock_minimo: Math.max(0, min)
+                    });
+                }
+            });
 
-    try {
-        const res = await fetch(`${API_BASE_URL}/api/ordenes/confirmar-retiro`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orden_id: ordenId, pin: pin })
+            if (!stockPorSucursal.length) {
+                showToast('Debes seleccionar al menos una sucursal con stock disponible.', 'error');
+                return;
+            }
+
+            res=await fetch(API_BASE_URL+'/api/productos',{
+                method:'POST',
+                headers:getAuthHeaders(),
+                body:JSON.stringify({
+                    nombre,
+                    descripcion,
+                    categoria,
+                    precio,
+                    sku,
+                    stock_por_sucursal: stockPorSucursal
+                })
+            });
+        }
+        if(!res.ok){const err=await res.json().catch(()=>({detail:'Error'}));throw new Error(err.detail);}
+        cerrarModal('modal-producto-form');showToast(id?'Producto actualizado!':'Producto creado!','success');
+        cargarInventarioEmpleado();cargarCatalogo();
+    }catch(e){showToast(e.message,'error');}
+}
+
+async function guardarStockSucursal(inventarioId){
+    const disp=parseInt(document.getElementById('stock-edit-disp-'+inventarioId)?.value||'0',10);
+    const min=parseInt(document.getElementById('stock-edit-min-'+inventarioId)?.value||'2',10);
+    if(isNaN(disp)||disp<0){showToast('El stock disponible no puede ser negativo.','error');return;}
+    try{
+        const res=await fetch(API_BASE_URL+'/api/inventario/'+inventarioId,{
+            method:'PUT',headers:getAuthHeaders(),
+            body:JSON.stringify({stock_disponible:disp,stock_minimo:min})
         });
+        if(!res.ok){const err=await res.json().catch(()=>({detail:'Error'}));throw new Error(err.detail);}
+        showToast('Stock actualizado!','success');
+        cargarInventarioEmpleado();cargarCatalogo();
+    }catch(e){showToast(e.message,'error');}
+}
 
+async function agregarProductoASucursal(){
+    const productoId = document.getElementById('prod-form-id').value;
+    const sucursalId = document.getElementById('prod-form-nueva-sucursal')?.value;
+    const stock = parseInt(document.getElementById('prod-form-nuevo-stock')?.value || '0', 10);
+    if (!productoId || !sucursalId) return;
+    if (isNaN(stock) || stock <= 0) {
+        showToast('Ingresá un stock inicial mayor a 0.', 'error');
+        return;
+    }
+    try {
+        const res = await fetch(API_BASE_URL + '/api/inventario', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({
+                producto_id: parseInt(productoId, 10),
+                sucursal_id: parseInt(sucursalId, 10),
+                stock_disponible: stock,
+                stock_minimo: 2
+            })
+        });
         if (!res.ok) {
-            const errData = await res.json().catch(() => ({ detail: 'Error al confirmar retiro' }));
-            throw new Error(errData.detail || 'PIN incorrecto o no válido');
+            const err = await res.json().catch(() => ({ detail: 'Error' }));
+            throw new Error(err.detail);
         }
-
-        showToast('¡Retiro confirmado exitosamente! Stock descontado de forma definitiva.', 'success');
-        document.getElementById('buscar-orden-id').value = ordenId;
-        document.getElementById('btn-buscar-orden').click();
-        
+        showToast('Producto asignado a la sucursal!', 'success');
+        await recargarStockEditar(productoId);
+        cargarInventarioEmpleado();
         cargarCatalogo();
-
-    } catch (error) {
-        showToast(error.message, 'error');
+    } catch(e) {
+        showToast(e.message, 'error');
     }
 }
 
+async function quitarProductoSucursal(inventarioId, productoId){
+    if (!confirm('¿Seguro que querés quitar este producto de esta sucursal?')) return;
+    try {
+        const res = await fetch(API_BASE_URL + '/api/inventario/' + inventarioId, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({ detail: 'Error' }));
+            throw new Error(err.detail);
+        }
+        showToast('Producto quitado de la sucursal.', 'success');
+        await recargarStockEditar(productoId);
+        cargarInventarioEmpleado();
+        cargarCatalogo();
+    } catch(e) {
+        showToast(e.message, 'error');
+    }
+}
+
+async function eliminarProducto(id){
+    if(!confirm('Seguro que queres eliminar este producto completamente?'))return;
+    try{
+        const res=await fetch(API_BASE_URL+'/api/productos/'+id,{method:'DELETE',headers:getAuthHeaders()});
+        if(!res.ok)throw new Error('No se pudo eliminar');
+        showToast('Producto eliminado.','success');cargarInventarioEmpleado();cargarCatalogo();
+    }catch(e){showToast(e.message,'error');}
+}
+
 // ==========================================================================
-// INICIALIZACIÓN AL CARGAR LA PÁGINA
+// EMPLEADO: TODAS LAS ORDENES
 // ==========================================================================
-window.addEventListener('DOMContentLoaded', () => {
+async function cargarTodasLasOrdenes(){
+    const tbody=document.getElementById('tbody-todas-ordenes');
+    if(!tbody)return;
+    tbody.innerHTML='<tr><td colspan="7" class="text-center text-muted">Cargando...</td></tr>';
+    try{
+        const res=await fetch(API_BASE_URL+'/api/ordenes',{headers:getAuthHeaders()});
+        if(!res.ok)throw new Error('No se pudieron cargar las ordenes');
+        const ordenes=await res.json();
+        if(!ordenes.length){tbody.innerHTML='<tr><td colspan="7" class="text-center text-muted">Sin ordenes.</td></tr>';return;}
+        tbody.innerHTML=ordenes.map(o=>{
+            const suc=state.sucursales.find(s=>s.id===o.sucursal_id);
+            const ec=o.estado==='retirada'?'text-green':o.estado==='cancelada'?'text-red':'';
+            const venc=o.fecha_vencimiento?new Date(o.fecha_vencimiento).toLocaleString('es-AR'):'-';
+            const puede=o.estado==='reservada'||o.estado==='lista_retiro';
+            return '<tr><td>ORD-'+o.id+'</td><td>'+(o.usuario_id||'Anonimo')+'</td><td>'+(suc?suc.nombre:'#'+o.sucursal_id)+'</td><td>$'+Number(o.total).toLocaleString('es-AR')+'</td><td class="'+ec+'">'+o.estado.toUpperCase()+'</td><td>'+venc+'</td><td>'+(puede?'<button class="btn btn-primary btn-sm" onclick="abrirModalRetiro('+o.id+')">Confirmar Retiro</button>':'-')+'</td></tr>';
+        }).join('');
+    }catch(e){tbody.innerHTML='<tr><td colspan="7" class="text-center text-muted">'+e.message+'</td></tr>';}
+}
+function abrirModalRetiro(ordenId){
+    document.getElementById('retiro-orden-id').value=ordenId;
+    document.getElementById('retiro-orden-id-label').textContent='ORD-'+ordenId;
+    document.getElementById('retiro-pin-input').value='';
+    document.getElementById('modal-confirmar-retiro').classList.add('activo');
+}
+async function confirmarRetiro(){
+    const ordenId=document.getElementById('retiro-orden-id').value;
+    const pin=document.getElementById('retiro-pin-input').value.trim();
+    if(!pin){showToast('Ingresa el PIN del cliente','error');return;}
+    try{
+        const res=await fetch(API_BASE_URL+'/api/ordenes/'+ordenId+'/retirar',{
+            method:'POST',headers:getAuthHeaders(),body:JSON.stringify({pin})
+        });
+        if(!res.ok){const err=await res.json().catch(()=>({detail:'Error'}));throw new Error(err.detail||'PIN incorrecto');}
+        cerrarModal('modal-confirmar-retiro');showToast('Retiro confirmado! Stock descontado.','success');
+        cargarTodasLasOrdenes();cargarCatalogo();
+    }catch(e){showToast(e.message,'error');}
+}
+
+// ==========================================================================
+// CSS EXTRA (tablas y auth)
+// ==========================================================================
+const extraCSS=document.createElement('style');
+extraCSS.textContent='.tabla-inventario{width:100%;border-collapse:collapse;font-size:.9rem;}.tabla-inventario th,.tabla-inventario td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--border,#2d3748);}.tabla-inventario thead{background:var(--surface-2,#1a202c);}.tabla-inventario tbody tr:hover{background:rgba(0,204,255,.04);}.btn-sm{padding:5px 10px;font-size:.8rem;}.text-red{color:#fc5c5c;}.text-green{color:var(--green,#48bb78);}.mb-20{margin-bottom:20px;}.mt-10{margin-top:10px;}.auth-container{display:flex;align-items:center;gap:10px;margin-left:auto;}.auth-label{font-size:.85rem;color:var(--cyan);font-weight:600;}.auth-tabs{display:flex;gap:4px;flex:1;}.auth-tab{background:transparent;border:none;padding:10px 18px;cursor:pointer;color:var(--text-muted,#a0aec0);font-weight:600;border-bottom:2px solid transparent;transition:all .2s;}.auth-tab.active{color:var(--cyan,#00ccff);border-bottom-color:var(--cyan,#00ccff);}.rol-selector{display:flex;gap:12px;}.rol-option{display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px 16px;border:1px solid var(--border,#2d3748);border-radius:8px;flex:1;justify-content:center;transition:.2s;}.rol-option:has(input:checked){border-color:var(--cyan,#00ccff);background:rgba(0,204,255,.08);}.rol-label{font-weight:600;}';
+document.head.appendChild(extraCSS);
+
+// ==========================================================================
+// INICIALIZACION
+// ==========================================================================
+window.addEventListener('DOMContentLoaded',()=>{
+    cargarSesionGuardada();
+    aplicarVisibilidad();
     cargarCatalogo();
 });
