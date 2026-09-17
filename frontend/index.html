@@ -196,9 +196,18 @@
             <h1 class="page-title">Gestión de Retiro en Mostrador</h1>
             <p class="section-desc">Consultá el estado de tu orden Click & Collect o presentá tu PIN de seguridad en el local para retirar tus productos.</p>
 
+            <!-- Lista de reservas del usuario actual -->
+            <div id="mis-ordenes-container" class="mb-20">
+                <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 12px; color: var(--cyan);">Tus Órdenes de Reserva</h2>
+                <div id="mis-ordenes-lista">
+                    <!-- Inyectado dinámicamente con JS -->
+                </div>
+            </div>
+
+            <!-- Buscador manual por ID de orden -->
             <div class="card orden-search">
                 <div class="form-group">
-                    <label for="buscar-orden-id">Ingresá tu Nº de Orden</label>
+                    <label for="buscar-orden-id">Consultar Orden Específica</label>
                     <div class="search-bar">
                         <input type="text" id="buscar-orden-id" class="form-input" placeholder="Ej: ORD-1 o simplemente 1">
                         <button id="btn-buscar-orden" class="btn btn-primary">Buscar Orden</button>
@@ -206,8 +215,8 @@
                 </div>
             </div>
 
-            <div id="orden-resultado" class="card mt-20" style="display: none;">
-                <!-- Detalles de la orden inyectados con JS -->
+            <div id="buscar-orden-resultado" class="card mt-20" style="display: none;">
+                <!-- Detalles de la búsqueda manual inyectados con JS -->
             </div>
         </section>
     </main>
@@ -427,20 +436,14 @@
                         <span id="modal-sucursal-hint" class="text-sm text-cyan mt-5"></span>
                     </div>
 
-                    <div class="form-row">
-                        <div class="form-group flex-1">
-                            <label for="modal-reserva-cantidad">Cantidad a Reservar</label>
-                            <div class="qty-control">
-                                <button type="button" class="qty-btn" id="qty-btn-minus">-</button>
-                                <input type="number" id="modal-reserva-cantidad" class="form-input text-center" min="1" value="1" required>
-                                <button type="button" class="qty-btn" id="qty-btn-plus">+</button>
-                            </div>
-                            <span id="modal-max-stock-info" class="text-sm text-muted"></span>
+                    <div class="form-group">
+                        <label for="modal-reserva-cantidad">Cantidad a Reservar</label>
+                        <div class="qty-control">
+                            <button type="button" class="qty-btn" id="qty-btn-minus">-</button>
+                            <input type="number" id="modal-reserva-cantidad" class="form-input text-center" min="1" value="1" required>
+                            <button type="button" class="qty-btn" id="qty-btn-plus">+</button>
                         </div>
-                        <div class="form-group flex-1">
-                            <label for="modal-reserva-email">Email de Contacto (Opcional)</label>
-                            <input type="email" id="modal-reserva-email" class="form-input" placeholder="tu@email.com">
-                        </div>
+                        <span id="modal-max-stock-info" class="text-sm text-muted"></span>
                     </div>
 
                     <div class="reserva-resumen-box mt-15">
@@ -520,7 +523,11 @@
                     <label for="login-password">Contraseña</label>
                     <input type="password" id="login-password" class="form-input" placeholder="Mínimo 8 caracteres">
                 </div>
-                <button class="btn btn-primary btn-block mt-15" onclick="submitLogin()">🔑 Iniciar Sesión</button>
+                <div class="form-group" style="display:flex;align-items:center;gap:8px;margin-top:10px;margin-bottom:15px;">
+                    <input type="checkbox" id="login-recordar" style="width:auto;cursor:pointer;accent-color:var(--cyan,#00e5ff);">
+                    <label for="login-recordar" style="cursor:pointer;font-size:0.85rem;color:var(--text-muted,#a0aec0);margin:0;user-select:none;">Recordar mi sesión en este navegador</label>
+                </div>
+                <button class="btn btn-primary btn-block" onclick="submitLogin()">🔑 Iniciar Sesión</button>
                 <p class="text-center text-sm text-muted mt-10">
                     ¿No tenés cuenta? <a href="#" onclick="switchAuthTab('tab-register'); return false;">Creá una aquí</a>
                 </p>
@@ -571,6 +578,6 @@
         </div>
     </div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=6"></script>
 </body>
 </html>

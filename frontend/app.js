@@ -23,19 +23,29 @@ function getAuthHeaders() {
     return {'Content-Type':'application/json','Authorization':'Bearer '+t};
 }
 function cargarSesionGuardada() {
-    const token = localStorage.getItem('nextech_token');
+    // Buscar primero en sessionStorage (sesion de la pestaña), luego en localStorage (sesion recordada)
+    const token = sessionStorage.getItem('nextech_token') || localStorage.getItem('nextech_token');
     if (token) {
         const p = decodeJWT(token);
         if (p && p.exp * 1000 > Date.now()) {
-            state.usuario = { token, role: p.role, nombre: p.sub };
+            const nombreMostrar = p.nombre || (p.email ? p.email.split('@')[0] : ('Usuario #' + p.sub));
+            state.usuario = { token, role: p.role, nombre: nombreMostrar, email: p.email };
         } else {
             localStorage.removeItem('nextech_token');
+            sessionStorage.removeItem('nextech_token');
         }
     }
 }
 function cerrarSesion() {
     localStorage.removeItem('nextech_token');
+    sessionStorage.removeItem('nextech_token');
     state.usuario = null;
+    const lista = document.getElementById('mis-ordenes-lista');
+    if (lista) lista.innerHTML = '';
+    const resBusqueda = document.getElementById('buscar-orden-resultado');
+    if (resBusqueda) { resBusqueda.style.display = 'none'; resBusqueda.innerHTML = ''; }
+    const inputBuscar = document.getElementById('buscar-orden-id');
+    if (inputBuscar) inputBuscar.value = '';
     aplicarVisibilidad();
     showToast('Sesion cerrada.', 'info');
     document.querySelector('[data-target="seccion-catalogo"]').click();
@@ -44,11 +54,26 @@ function cerrarSesion() {
 // ==========================================================================
 // AUTH MODAL
 // ==========================================================================
+function setupBackdropClose(modalId, closeFn) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+    let clickStartedOnBackdrop = false;
+    modal.addEventListener('mousedown', (e) => {
+        // Solo es verdadero si se hizo clic exactamente sobre el fondo/backdrop (no sus hijos)
+        clickStartedOnBackdrop = (e.target === modal);
+    });
+    modal.addEventListener('mouseup', (e) => {
+        // Solo cerramos si TANTO el inicio (mousedown) como el fin (mouseup) ocurrieron en el backdrop
+        if (clickStartedOnBackdrop && e.target === modal) {
+            closeFn();
+        }
+        clickStartedOnBackdrop = false;
+    });
+}
+
 function abrirAuthModal() { document.getElementById('modal-auth').classList.add('activo'); }
 function cerrarAuthModal() { document.getElementById('modal-auth').classList.remove('activo'); }
-document.getElementById('modal-auth').addEventListener('click', (e) => {
-    if (e.target.id === 'modal-auth') cerrarAuthModal();
-});
+setupBackdropClose('modal-auth', cerrarAuthModal);
 function switchAuthTab(tabId) {
     document.querySelectorAll('.auth-tab-content').forEach(t => t.style.display='none');
     document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
@@ -58,6 +83,7 @@ function switchAuthTab(tabId) {
 async function submitLogin() {
     const email = document.getElementById('login-email').value.trim();
     const password = document.getElementById('login-password').value;
+    const recordar = document.getElementById('login-recordar') ? document.getElementById('login-recordar').checked : false;
     if (!email || !password) { showToast('Completa todos los campos.','error'); return; }
     try {
         const res = await fetch(API_BASE_URL+'/api/auth/login', {
@@ -67,12 +93,27 @@ async function submitLogin() {
         if (!res.ok) { const err = await res.json().catch(()=>({detail:'Error'})); throw new Error(err.detail||'Credenciales invalidas'); }
         const data = await res.json();
         const payload = decodeJWT(data.access_token);
-        state.usuario = { token: data.access_token, role: payload.role, nombre: email.split('@')[0] };
-        localStorage.setItem('nextech_token', data.access_token);
+        const nombreMostrar = data.nombre || (payload ? payload.nombre : null) || email.split('@')[0];
+        state.usuario = { token: data.access_token, role: data.role || payload.role, nombre: nombreMostrar, email };
+        
+        if (recordar) {
+            localStorage.setItem('nextech_token', data.access_token);
+            sessionStorage.removeItem('nextech_token');
+        } else {
+            sessionStorage.setItem('nextech_token', data.access_token);
+            localStorage.removeItem('nextech_token');
+        }
+
+        // Limpiar búsquedas previas de órdenes
+        const resBusqueda = document.getElementById('buscar-orden-resultado');
+        if (resBusqueda) { resBusqueda.style.display = 'none'; resBusqueda.innerHTML = ''; }
+        const inputBuscar = document.getElementById('buscar-orden-id');
+        if (inputBuscar) inputBuscar.value = '';
         cerrarAuthModal();
         aplicarVisibilidad();
-        showToast('Bienvenido/a! Rol: '+payload.role, 'success');
-        if (payload.role === 'empleado') { cargarInventarioEmpleado(); cargarTodasLasOrdenes(); }
+        showToast('Bienvenido/a ' + nombreMostrar + '! Rol: ' + (data.role || payload.role), 'success');
+        if ((data.role || payload.role) === 'empleado') { cargarInventarioEmpleado(); cargarTodasLasOrdenes(); }
+        if ((data.role || payload.role) === 'cliente') { cargarMisOrdenes(); }
     } catch(e) { showToast(e.message,'error'); }
 }
 async function submitRegister() {
@@ -145,6 +186,8 @@ document.getElementById('sucursal-global').addEventListener('change', (e) => {
     renderProductos(state.productos, e.target.value);
 });
 function cerrarModal(modalId) { document.getElementById(modalId).classList.remove('activo'); }
+setupBackdropClose('modal-confirmar-retiro', () => cerrarModal('modal-confirmar-retiro'));
+setupBackdropClose('modal-producto-form', () => cerrarModal('modal-producto-form'));
 
 // ==========================================================================
 // TOAST
@@ -259,7 +302,9 @@ function renderProductos(productos, sucursalFiltro) {
         const total = prod.stock ? Object.values(prod.stock).reduce((a,b)=>a+b,0) : 0;
         const btnHtml = esCliente
             ? '<button class="btn btn-outline btn-block"'+(total===0?' disabled':'')+' onclick="abrirModalReserva('+prod.id+')">'+(total===0?'Sin Stock':'&#9889; Reservar (Click &amp; Collect)')+'</button>'
-            : '<button class="btn btn-outline btn-block" disabled title="Inicia sesion como cliente" style="opacity:0.4;cursor:not-allowed;">Reservar (requiere cuenta)</button>';
+            : (state.usuario && state.usuario.role==='empleado'
+                ? '<button class="btn btn-outline btn-block" disabled title="Cuenta de empleado (modo gestión)" style="opacity:0.4;cursor:not-allowed;">Cuenta Empleado</button>'
+                : '<button class="btn btn-outline btn-block" onclick="abrirAuthModal()" title="Iniciá sesión como cliente para reservar">&#9889; Reservar (Iniciar Sesión)</button>');
         card.innerHTML = '<div><h3 class="producto-nombre">'+prod.nombre+'</h3><p class="producto-categoria">'+(prod.categoria||'Hardware')+'</p><p class="producto-precio">$'+Number(prod.precio).toLocaleString('es-AR')+'</p><div class="stock-chips">'+chipsHtml+'</div></div>'+btnHtml;
         grilla.appendChild(card);
     });
@@ -299,7 +344,7 @@ function abrirModalReserva(productoId, sucursalPreseleccionada=null) {
     document.getElementById('modal-flujo-reserva').classList.add('activo');
 }
 document.getElementById('btn-cerrar-modal-reserva').addEventListener('click',cerrarModalReserva);
-document.getElementById('modal-flujo-reserva').addEventListener('click',(e)=>{if(e.target.id==='modal-flujo-reserva')cerrarModalReserva();});
+setupBackdropClose('modal-flujo-reserva', cerrarModalReserva);
 function cerrarModalReserva(){document.getElementById('modal-flujo-reserva').classList.remove('activo');}
 document.getElementById('modal-reserva-sucursal').addEventListener('change',actualizarMaxCantidadModal);
 document.getElementById('modal-reserva-cantidad').addEventListener('input',recalcularSubtotalModal);
@@ -357,8 +402,8 @@ document.getElementById('btn-copiar-pin').addEventListener('click',()=>{
 });
 document.getElementById('btn-cerrar-exito').addEventListener('click',()=>{
     document.getElementById('modal-exito-reserva').classList.remove('activo');
-    const id=document.getElementById('modal-exito-orden-id').textContent.replace('ORD-','');
-    document.getElementById('buscar-orden-id').value=id;
+    const inputBuscar = document.getElementById('buscar-orden-id');
+    if (inputBuscar) inputBuscar.value = '';
     document.querySelector('[data-target="seccion-ordenes"]').click();
 });
 
@@ -397,7 +442,7 @@ async function consultarAsistenteIA(){
             const btnR=esCliente
                 ?'<button class="btn btn-outline btn-block mt-15" onclick="abrirModalReserva('+p.id+','+p.sucursal_id+')">Reservar</button>'
                 :'<button class="btn btn-outline btn-block mt-15" disabled style="opacity:0.4;">Inicia sesion para reservar</button>';
-            card.innerHTML='<div><h3 class="producto-nombre">'+p.nombre+'</h3><p class="producto-categoria">'+p.categoria+'</p><p class="producto-precio">$'+Number(p.precio).toLocaleString('es-AR')+'</p><div class="chip stock-ok mt-20" style="display:inline-block;"><span>v '+p.stock_disponible+' disp. en '+p.sucursal_nombre+'</span></div></div>'+btnR;
+            card.innerHTML='<div><h3 class="producto-nombre">'+p.nombre+'</h3><p class="producto-categoria">'+p.categoria+'</p><p class="producto-precio">$'+Number(p.precio).toLocaleString('es-AR')+'</p><div class="chip stock-ok mt-20" style="display:inline-block;"><span>✓ '+p.stock_disponible+' disp. en '+p.sucursal_nombre+'</span></div></div>'+btnR;
             grilla.appendChild(card);
         });
         document.getElementById('ia-total-monto').textContent='$'+Number(data.total).toLocaleString('es-AR');
@@ -416,22 +461,35 @@ document.getElementById('btn-ia-reservar').addEventListener('click',()=>{
 // CLIENTE: MIS ORDENES
 // ==========================================================================
 async function cargarMisOrdenes(){
-    const resDiv=document.getElementById('orden-resultado');
-    resDiv.style.display='block';resDiv.innerHTML='<p class="text-muted">Cargando tus ordenes...</p>';
+    const listaDiv = document.getElementById('mis-ordenes-lista');
+    if (!listaDiv) return;
+    listaDiv.innerHTML = '<p class="text-muted">Cargando tus ordenes...</p>';
     try{
-        const res=await fetch(API_BASE_URL+'/api/mis-ordenes',{headers:getAuthHeaders()});
-        if(!res.ok)throw new Error('No se pudieron cargar las ordenes');
-        const ordenes=await res.json();
-        if(!ordenes.length){resDiv.innerHTML='<p class="text-muted">No tienes ordenes de reserva aun.</p>';return;}
-        let html='';
-        ordenes.forEach(o=>{
-            const suc=state.sucursales.find(s=>s.id===o.sucursal_id)||{nombre:'Sucursal #'+o.sucursal_id};
-            const ec=o.estado==='retirada'?'stock-ok':o.estado==='cancelada'?'stock-out':'stock-low';
-            html+='<div class="card mb-20" style="border-left:4px solid var(--cyan);"><div style="display:flex;justify-content:space-between;align-items:center;"><h3>Orden ORD-'+o.id+'</h3><span class="chip '+ec+'" style="display:inline-block;">'+o.estado.toUpperCase()+'</span></div><p><strong>Sucursal:</strong> '+suc.nombre+'</p><p><strong>Total:</strong> $'+Number(o.total).toLocaleString('es-AR')+'</p><p><strong>Creada:</strong> '+(o.fecha_creacion?new Date(o.fecha_creacion).toLocaleString('es-AR'):'-')+'</p>'+(o.pin?'<div class="pin-display-card mt-10"><span class="pin-label">TU PIN</span><div class="pin-code">'+o.pin+'</div></div>':'')+((o.estado==='reservada'||o.estado==='lista_retiro')?'<button class="btn btn-outline mt-10" onclick="cancelarReserva('+o.id+')">Cancelar esta reserva</button>':'')+'</div>';
+        const res = await fetch(API_BASE_URL+'/api/mis-ordenes', {headers: getAuthHeaders()});
+        if (!res.ok) {
+            if (res.status === 401 || res.status === 403) {
+                listaDiv.innerHTML = '<p class="text-muted">Inicia sesion como cliente para ver tus reservas.</p>';
+                return;
+            }
+            throw new Error('No se pudieron cargar las ordenes');
+        }
+        const ordenes = await res.json();
+        if (!ordenes.length) {
+            listaDiv.innerHTML = '<p class="text-muted">No tienes reservas activas con esta cuenta.</p>';
+            return;
+        }
+        let html = '';
+        ordenes.forEach(o => {
+            const suc = state.sucursales.find(s=>s.id===o.sucursal_id) || {nombre: 'Sucursal #'+o.sucursal_id};
+            const ec = o.estado === 'retirada' ? 'stock-ok' : o.estado === 'cancelada' ? 'stock-out' : 'stock-low';
+            html += '<div class="card mb-20" style="border-left:4px solid var(--cyan);"><div style="display:flex;justify-content:space-between;align-items:center;"><h3>Orden ORD-'+o.id+'</h3><span class="chip '+ec+'" style="display:inline-block;">'+o.estado.toUpperCase()+'</span></div><p><strong>Sucursal:</strong> '+suc.nombre+'</p><p><strong>Total:</strong> $'+Number(o.total).toLocaleString('es-AR')+'</p><p><strong>Creada:</strong> '+(o.fecha_creacion?new Date(o.fecha_creacion).toLocaleString('es-AR'):'-')+'</p>'+(o.pin?'<div class="pin-display-card mt-10"><span class="pin-label">TU PIN</span><div class="pin-code">'+o.pin+'</div></div>':'')+((o.estado==='reservada'||o.estado==='lista_retiro')?'<button class="btn btn-outline mt-10" onclick="cancelarReserva('+o.id+')">Cancelar esta reserva</button>':'')+'</div>';
         });
-        resDiv.innerHTML=html;
-    }catch(e){resDiv.innerHTML='<p class="text-muted">'+e.message+'</p>';}
+        listaDiv.innerHTML = html;
+    } catch(e) {
+        listaDiv.innerHTML = '<p class="text-muted">'+e.message+'</p>';
+    }
 }
+
 async function cancelarReserva(ordenId){
     if(!confirm('Estas seguro de cancelar esta reserva?'))return;
     const pinInput=prompt('Ingresa tu PIN para confirmar la cancelacion:');
@@ -444,21 +502,23 @@ async function cancelarReserva(ordenId){
         showToast('Reserva cancelada.','success');cargarMisOrdenes();cargarCatalogo();
     }catch(e){showToast(e.message,'error');}
 }
+
 document.getElementById('btn-buscar-orden').addEventListener('click',async()=>{
     let v=document.getElementById('buscar-orden-id').value.trim();
+    const resDiv=document.getElementById('buscar-orden-resultado');
     if(!v){showToast('Ingresa un ID de orden','error');return;}
     const id=parseInt(v.replace(/^ORD-/i,''));
     if(isNaN(id)){showToast('Formato invalido','error');return;}
     try{
-        const res=await fetch(API_BASE_URL+'/api/ordenes/'+id);
-        if(!res.ok)throw new Error('Orden no encontrada');
+        const res=await fetch(API_BASE_URL+'/api/ordenes/'+id, {headers: getAuthHeaders()});
+        if(res.status === 403) throw new Error('Esta orden no pertenece a tu cuenta');
+        if(!res.ok) throw new Error('Orden no encontrada');
         const o=await res.json();
         const suc=state.sucursales.find(s=>s.id===o.sucursal_id)||{nombre:'Sucursal #'+o.sucursal_id};
         const items=o.items.map(it=>'<li>Producto #'+it.producto_id+' - Cant: '+it.cantidad+' ($'+Number(it.precio_unitario).toLocaleString('es-AR')+' c/u)</li>').join('');
-        const resDiv=document.getElementById('orden-resultado');
         resDiv.style.display='block';
         resDiv.innerHTML='<h3>Orden #ORD-'+o.id+'</h3><p><strong>Estado:</strong> <span class="chip '+(o.estado==='retirada'?'stock-ok':'stock-low')+'" style="display:inline-block;margin-left:5px;">'+o.estado.toUpperCase()+'</span></p><p><strong>Sucursal:</strong> '+suc.nombre+'</p><p><strong>Total:</strong> $'+Number(o.total).toLocaleString('es-AR')+'</p><p><strong>Creada:</strong> '+new Date(o.fecha_creacion).toLocaleString('es-AR')+'</p><div class="mt-20"><strong>Articulos:</strong><ul style="margin-left:20px;margin-top:5px;">'+items+'</ul></div>';
-    }catch(e){showToast(e.message,'error');document.getElementById('orden-resultado').style.display='none';}
+    }catch(e){showToast(e.message,'error');if(resDiv)resDiv.style.display='none';}
 });
 
 // ==========================================================================

@@ -142,13 +142,19 @@ def cancelar_orden(
 # --- GET detalle de orden -----------------------------------------------------
 
 @router.get("/ordenes/{orden_id}", response_model=schemas.OrdenResponse)
-def detalle_orden(orden_id: int, db: Session = Depends(get_db)):
-    """Obtiene el detalle completo de una orden."""
+def detalle_orden(
+    orden_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.Usuario = Depends(get_current_user)
+):
+    """Obtiene el detalle completo de una orden (propia para clientes, cualquiera para empleados)."""
     orden = db.query(models.OrdenClickCollect).filter(
         models.OrdenClickCollect.id == orden_id
     ).first()
     if not orden:
         raise HTTPException(status_code=404, detail="Orden no encontrada")
+    if getattr(current_user, "role", None) != "empleado" and orden.usuario_id != current_user.id:
+        raise HTTPException(status_code=403, detail="No tenes permiso para ver esta orden")
     return orden
 
 
