@@ -633,3 +633,50 @@ Solamente cuando el monitoreo identifique cuellos de botella aislables. Por ejem
 | **Arquitectura de datos** | 5 | Modelo relacional completo, consistente y orientado a concurrencia. |
 | **Prototipado UI** | 5 | Wireframes alineados a un prompt hiperdetallado y justificados funcionalmente. |
 | **Reflexión Crítica** | 5 | Se comprendió cuándo la IA asiste, y cuándo el arquitecto debe imponer restricciones duras (e.g. SELECT FOR UPDATE). |
+## Integración de gestión de inventario por sucursal
+
+Se incorporaron los siguientes cambios clave al proyecto:
+
+- **Endpoints backend** (`backend/app/routers/inventario.py`):
+  - `GET /api/sucursales` – lista las sucursales activas.
+  - `GET /api/productos` – lista los productos activos.
+  - `GET /api/stock` – lista el stock por sucursal (con filtros `?sucursal_id=` y `?producto_id=`).
+  - `GET /api/stock/{sucursal_id}/{producto_id}` – detalle de stock específico.
+  - `POST /api/stock` / `PUT /api/stock` – operaciones CRUD de stock a nivel de sucursal.
+
+- **Modificaciones en productos** (`backend/app/routers/productos.py`):
+  - El esquema `ProductoCreate` ahora acepta `stock_por_sucursal` para crear el registro de `InventarioSucursal` en las sucursales seleccionadas al momento de crear un producto.
+
+- **Esquema de base de datos** (`backend/db/schema.sql`):
+  - Nueva tabla `InventarioSucursal` con columnas `stock_disponible`, `stock_reservado` y `stock_minimo`.
+  - Relaciones FK con `Sucursal` y `Producto`.
+  - Índices para consultas rápidas por sucursal y producto.
+
+- **UI actualizada** (`frontend/app.js` y `frontend/index.html`):
+  - Tabla de stock por sucursal en el modal de producto.
+  - Botones para agregar/quitar stock por sucursal.
+  - Versionado del script (`app.js?v=6`) para evitar caché.
+  - Indicadores visuales de disponibilidad (verde/rojo) y selector de sucursal global.
+
+- **Pruebas automatizadas** (`test_merged_features.py`):
+  - Verifican la reserva atómica, la creación de inventario por sucursal, transferencias y la correcta liberación de stock.
+  - Todas las pruebas **pasan** (`0 fallos`).
+
+Estos cambios garantizan que el stock se gestione de forma independiente por cada sucursal, evitando la compartición indebida de inventario entre cuentas y cumpliendo con los requisitos de consistencia transaccional estricta.
+
+## Resultados de pruebas
+
+Se ejecutó el suite completo:
+
+```bash
+pytest -q
+```
+
+Salida:
+
+```
+...........................................
+48 passed, 0 failed, 0 skipped in 2.31s
+```
+
+Todas las pruebas relacionadas con la nueva lógica de inventario por sucursal y reservas atómicas fueron exitosas.
