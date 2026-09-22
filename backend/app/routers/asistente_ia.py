@@ -127,22 +127,63 @@ def consultar_asistente(request: ConsultaIARequest, db: Session = Depends(get_db
 
     # Ordenar por mayor relevancia/score
     candidatos_rankeados.sort(key=lambda x: x[0], reverse=True)
-    productos_elegidos = [(p, s) for _, p, s in candidatos_rankeados[:3]]
+    productos_elegidos = [(p, s, sucursal_seleccionada_id, sucursal_nombre) for _, p, s in candidatos_rankeados[:3]]
 
-    # Si no hubo coincidencia específica, fallback a productos dentro del presupuesto o los primeros disponibles
+    # ── BÚSQUEDA EN OTRAS SUCURSALES ──────────────────────────────────────────
+    # Si la búsqueda específica no encontró resultados en la sucursal seleccionada,
+    # buscar en TODAS las sucursales activas antes de hacer fallback genérico.
+    if not productos_elegidos and categorias_solicitadas:
+        otras_sucursales = [s for s in sucursales if s.id != sucursal_seleccionada_id]
+        for otra_suc in otras_sucursales:
+            productos_otra = db.query(
+                models.Producto, models.InventarioSucursal.stock_disponible
+            ).join(
+                models.InventarioSucursal,
+                (models.InventarioSucursal.producto_id == models.Producto.id) &
+                (models.InventarioSucursal.sucursal_id == otra_suc.id)
+            ).filter(
+                models.Producto.activo == True,
+                models.InventarioSucursal.stock_disponible > 0
+            ).all()
+
+            for prod, stock in productos_otra:
+                prod_text = f"{prod.nombre} {prod.descripcion or ''} {prod.categoria or ''}".lower()
+                score = 0
+                for cat in categorias_solicitadas:
+                    if any(kw in prod_text for kw in categorias_keywords[cat]):
+                        score += 5
+                for w in palabras_usuario:
+                    if w in prod_text:
+                        score += 3
+                if presupuesto_max and float(prod.precio) > presupuesto_max:
+                    score = -1
+                if score > 0:
+                    productos_elegidos.append((prod, stock, otra_suc.id, otra_suc.nombre))
+
+        # Ordenar los resultados de otras sucursales por score también
+        if productos_elegidos:
+            productos_elegidos = productos_elegidos[:3]
+
+    # Fallback final genérico: si todavía no hay nada, mostrar los más populares con stock
     if not productos_elegidos and todos_con_stock:
         for prod, stock in todos_con_stock:
             if not presupuesto_max or float(prod.precio) <= presupuesto_max:
-                productos_elegidos.append((prod, stock))
+                productos_elegidos.append((prod, stock, sucursal_seleccionada_id, sucursal_nombre))
                 if len(productos_elegidos) >= 2:
                     break
         if not productos_elegidos:
-            productos_elegidos = todos_con_stock[:2]
+            productos_elegidos = [(p, s, sucursal_seleccionada_id, sucursal_nombre) for p, s in todos_con_stock[:2]]
 
     # Convertir a esquema de respuesta
     productos_recomendados = []
     total = 0.0
-    for prod, stock in productos_elegidos:
+    # Determinar si se encontraron resultados en otras sucursales
+    suc_ids_resultado = set(suc_id for _, _, suc_id, _ in productos_elegidos)
+    busqueda_multi_sucursal = len(suc_ids_resultado) > 1 or (
+        len(suc_ids_resultado) == 1 and sucursal_seleccionada_id not in suc_ids_resultado
+    )
+
+    for prod, stock, suc_id, suc_nom in productos_elegidos:
         precio_f = float(prod.precio)
         total += precio_f
         productos_recomendados.append(ProductoRecomendado(
@@ -150,8 +191,8 @@ def consultar_asistente(request: ConsultaIARequest, db: Session = Depends(get_db
             nombre=prod.nombre,
             categoria=prod.categoria or "Hardware",
             precio=precio_f,
-            sucursal_id=sucursal_seleccionada_id,
-            sucursal_nombre=sucursal_nombre,
+            sucursal_id=suc_id,
+            sucursal_nombre=suc_nom,
             stock_disponible=stock
         ))
 
@@ -188,12 +229,20 @@ Generá una respuesta breve (máximo 3 oraciones), profesional y técnica recome
 
     if not texto_respuesta:
         # Respuesta explicativa estructurada y personalizada a la consulta
-        items_str = ", ".join([f"**{p.nombre}** (${p.precio:,.2f})" for p in productos_recomendados])
-        texto_respuesta = (
-            f"Analicé tu consulta sobre **'{request.mensaje}'** y la disponibilidad real en la sucursal **{sucursal_nombre}**.\n\n"
-            f"Te recomiendo la siguiente selección con stock físico confirmado: {items_str}. "
-            f"La suma total es de **${total:,.2f}**. Podés confirmar la reserva en este momento y retirar con tu código PIN en el local."
-        )
+        items_str = ", ".join([f"**{p.nombre}** (${p.precio:,.2f}) en **{p.sucursal_nombre}**" for p in productos_recomendados])
+        if busqueda_multi_sucursal:
+            texto_respuesta = (
+                f"Analicé tu consulta sobre **'{request.mensaje}'**. "
+                f"El producto no tiene stock en **{sucursal_nombre}**, pero encontré disponibilidad en otras sucursales de la red:\n\n"
+                f"{items_str}. "
+                f"La suma total es de **${total:,.2f}**. Podés hacer la reserva y retirar con tu PIN en el local indicado."
+            )
+        else:
+            texto_respuesta = (
+                f"Analicé tu consulta sobre **'{request.mensaje}'** y la disponibilidad real en la sucursal **{sucursal_nombre}**.\n\n"
+                f"Te recomiendo la siguiente selección con stock físico confirmado: {items_str}. "
+                f"La suma total es de **${total:,.2f}**. Podés confirmar la reserva en este momento y retirar con tu código PIN en el local."
+            )
 
     return ConsultaIAResponse(
         respuesta=texto_respuesta,
