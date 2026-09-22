@@ -7,9 +7,29 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Obtener la URL de conexión a la base de datos de la variable de entorno,
-# con SQLite local por defecto en backend/nextech.db para desarrollo inmediato
+# con soporte para nombres comunes de Render y limpieza automatica
 DEFAULT_DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "nextech.db"))
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}")
+raw_db_url = (
+    os.getenv("DATABASE_URL")
+    or os.getenv("INTERNAL_DATABASE_URL")
+    or os.getenv("POSTGRES_URL")
+    or os.getenv("POSTGRESQL_URL")
+    or os.getenv("DATABASE_URI")
+    or os.getenv("DB_URL")
+)
+
+if raw_db_url and raw_db_url.strip():
+    DATABASE_URL = raw_db_url.strip().strip("'").strip('"')
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+else:
+    DATABASE_URL = f"sqlite:///{DEFAULT_DB_PATH}"
+
+# Log para verificar en Render qué base de datos está activa
+safe_url = DATABASE_URL.split('@')[-1] if '@' in DATABASE_URL else DATABASE_URL
+print(f"\n==========================================")
+print(f"--> [DATABASE ENGINE] Conectado a: {safe_url}")
+print(f"==========================================\n")
 
 # Crear el motor de SQLAlchemy adaptado al motor configurado
 if DATABASE_URL.startswith("sqlite"):
