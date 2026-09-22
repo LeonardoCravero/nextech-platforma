@@ -81,13 +81,15 @@ def consultar_asistente(request: ConsultaIARequest, db: Session = Depends(get_db
 
     # Mapeo de términos clave por tipo de hardware
     categorias_keywords = {
-        "notebook": ["notebook", "laptop", "portatil", "compu", "computadora", "programar", "edicion", "diseño"],
-        "monitor": ["monitor", "pantalla", "display", "curvo", "34"],
-        "teclado": ["teclado", "keyboard", "mecanico", "periferico"],
-        "mouse": ["mouse", "raton", "ergonomico"],
+        "video": ["placa", "video", "gpu", "grafica", "gráfica", "rtx", "gtx", "radeon", "rx", "geforce", "vga"],
+        "notebook": ["notebook", "laptop", "portatil", "portátil", "compu", "computadora", "programar", "edicion", "diseño"],
+        "monitor": ["monitor", "pantalla", "display", "curvo", "34", "144hz"],
+        "teclado": ["teclado", "keyboard", "mecanico", "mecánico", "periferico", "periférico"],
+        "mouse": ["mouse", "raton", "ratón", "ergonomico", "ergonómico"],
         "audio": ["auricular", "auriculares", "headset", "sonido", "audio", "noise"],
-        "almacenamiento": ["ssd", "disco", "solido", "m.2", "nvme", "almacenamiento"],
-        "componentes": ["ram", "memoria", "ddr5"]
+        "almacenamiento": ["ssd", "disco", "solido", "sólido", "m.2", "nvme", "almacenamiento"],
+        "componentes": ["ram", "memoria", "ddr5", "componente", "componentes"],
+        "procesador": ["procesador", "cpu", "intel", "ryzen", "core", "i9", "i7", "i5"]
     }
 
     # Evaluar qué categorías busca el usuario
@@ -96,22 +98,46 @@ def consultar_asistente(request: ConsultaIARequest, db: Session = Depends(get_db
         if any(kw in mensaje_lower for kw in kws):
             categorias_solicitadas.add(cat)
 
-    if not categorias_solicitadas:
-        # Si la consulta es general (ej: "qué me recomendás con $1000?"), seleccionar lo más destacado
+    # Extraer palabras del mensaje ignorando palabras comunes (stopwords)
+    stopwords = {"de", "la", "el", "un", "una", "en", "para", "por", "con", "que", "los", "las", "y", "o", "a", "al", "del", "mi", "me", "su", "quiero", "busco", "necesito", "tenes", "tienen", "recomendas", "recomiendame", "hola", "buenas"}
+    palabras_usuario = [w for w in re.findall(r'\b[a-zA-Z0-9áéíóúñÁÉÍÓÚÑ_]{3,}\b', mensaje_lower) if w not in stopwords]
+
+    # Calcular score de coincidencia para cada producto con stock disponible
+    candidatos_rankeados = []
+    for prod, stock in todos_con_stock:
+        prod_text = f"{prod.nombre} {prod.descripcion or ''} {prod.categoria or ''}".lower()
+        score = 0
+
+        # 1. Coincidencia por categoría detectada
+        for cat in categorias_solicitadas:
+            if any(kw in prod_text for kw in categorias_keywords[cat]):
+                score += 5
+
+        # 2. Coincidencia directa de palabras escritas por el usuario en el nombre o descripción
+        for w in palabras_usuario:
+            if w in prod_text:
+                score += 3
+
+        # Si el usuario especificó un presupuesto máximo y el producto lo supera, no se prioriza
+        if presupuesto_max and float(prod.precio) > presupuesto_max:
+            score = -1
+
+        if score > 0:
+            candidatos_rankeados.append((score, prod, stock))
+
+    # Ordenar por mayor relevancia/score
+    candidatos_rankeados.sort(key=lambda x: x[0], reverse=True)
+    productos_elegidos = [(p, s) for _, p, s in candidatos_rankeados[:3]]
+
+    # Si no hubo coincidencia específica, fallback a productos dentro del presupuesto o los primeros disponibles
+    if not productos_elegidos and todos_con_stock:
         for prod, stock in todos_con_stock:
             if not presupuesto_max or float(prod.precio) <= presupuesto_max:
                 productos_elegidos.append((prod, stock))
                 if len(productos_elegidos) >= 2:
                     break
-    else:
-        for prod, stock in todos_con_stock:
-            prod_text = f"{prod.nombre} {prod.descripcion} {prod.categoria}".lower()
-            if any(any(kw in prod_text for kw in categorias_keywords[cat]) for cat in categorias_solicitadas):
-                productos_elegidos.append((prod, stock))
-
-    # Si aún no encontró productos específicos, tomar los 2 más relevantes con stock
-    if not productos_elegidos and todos_con_stock:
-        productos_elegidos = todos_con_stock[:2]
+        if not productos_elegidos:
+            productos_elegidos = todos_con_stock[:2]
 
     # Convertir a esquema de respuesta
     productos_recomendados = []
@@ -161,12 +187,12 @@ Generá una respuesta breve (máximo 3 oraciones), profesional y técnica recome
         pass
 
     if not texto_respuesta:
-        # Respuesta explicativa estructurada
+        # Respuesta explicativa estructurada y personalizada a la consulta
         items_str = ", ".join([f"**{p.nombre}** (${p.precio:,.2f})" for p in productos_recomendados])
         texto_respuesta = (
-            f"Analicé tu consulta y la disponibilidad real en la sucursal **{sucursal_nombre}**.\n\n"
-            f"Te recomiendo la siguiente selección de equipamiento con stock físico confirmado: {items_str}. "
-            f"La suma total es de **${total:,.2f}**. Podés confirmar la reserva en este momento y retirar con tu código PIN en menos de 1 hora."
+            f"Analicé tu consulta sobre **'{request.mensaje}'** y la disponibilidad real en la sucursal **{sucursal_nombre}**.\n\n"
+            f"Te recomiendo la siguiente selección con stock físico confirmado: {items_str}. "
+            f"La suma total es de **${total:,.2f}**. Podés confirmar la reserva en este momento y retirar con tu código PIN en el local."
         )
 
     return ConsultaIAResponse(
