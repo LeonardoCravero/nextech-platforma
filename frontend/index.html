@@ -324,6 +324,49 @@
     </div>
 
     <!-- ========================================== -->
+    <!-- MODAL: DETALLE DE PRODUCTOS DE LA ORDEN    -->
+    <!-- ========================================== -->
+    <div id="modal-detalle-orden" class="modal">
+        <div class="modal-content card" style="max-width:580px;">
+            <div class="modal-header">
+                <div>
+                    <h2 id="modal-detalle-orden-titulo" style="font-size:1.25rem;">Detalle de la Orden</h2>
+                    <p id="modal-detalle-orden-subtitulo" class="text-sm text-muted" style="margin-top:2px;">Productos reservados</p>
+                </div>
+                <button class="modal-close-btn" onclick="cerrarModal('modal-detalle-orden')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="overflow-x:auto;">
+                    <table class="tabla-inventario" style="margin-top:0;">
+                        <thead>
+                            <tr>
+                                <th>Producto</th>
+                                <th style="text-align:center;">Cantidad</th>
+                                <th style="text-align:right;">Precio unitario</th>
+                                <th style="text-align:right;">Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody id="modal-detalle-orden-tbody">
+                            <!-- Filas inyectadas por JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="reserva-resumen-box mt-20" style="background:rgba(15,23,42,0.6);padding:1rem;border-radius:var(--border-radius-sm);border:1px solid var(--border-card);">
+                    <div class="resumen-item" style="display:flex;justify-content:space-between;align-items:center;">
+                        <span class="font-semibold">Total a cobrar:</span>
+                        <strong id="modal-detalle-orden-total" class="text-green text-lg">$0.00</strong>
+                    </div>
+                </div>
+
+                <div class="mt-20" style="display:flex;justify-content:flex-end;">
+                    <button class="btn btn-outline" onclick="cerrarModal('modal-detalle-orden')">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
     <!-- MODAL: NUEVO/EDITAR PRODUCTO (empleado)    -->
     <!-- ========================================== -->
     <div id="modal-producto-form" class="modal">
@@ -603,6 +646,6 @@
         </div>
     </div>
 
-    <script src="app.js?v=8"></script>
+    <script src="app.js?v=9"></script>
 </body>
 </html>

@@ -212,6 +212,7 @@ document.getElementById('sucursal-global').addEventListener('change', (e) => {
 function cerrarModal(modalId) { document.getElementById(modalId).classList.remove('activo'); }
 setupBackdropClose('modal-confirmar-retiro', () => cerrarModal('modal-confirmar-retiro'));
 setupBackdropClose('modal-producto-form', () => cerrarModal('modal-producto-form'));
+setupBackdropClose('modal-detalle-orden', () => cerrarModal('modal-detalle-orden'));
 
 // ==========================================================================
 // TOAST
@@ -506,8 +507,9 @@ async function cargarMisOrdenes(){
         let html = '';
         ordenes.forEach(o => {
             const suc = state.sucursales.find(s=>s.id===o.sucursal_id) || {nombre: 'Sucursal #'+o.sucursal_id};
-            const ec = o.estado === 'retirada' ? 'stock-ok' : o.estado === 'cancelada' ? 'stock-out' : 'stock-low';
-            html += '<div class="card mb-20" style="border-left:4px solid var(--cyan);"><div style="display:flex;justify-content:space-between;align-items:center;"><h3>Orden ORD-'+o.id+'</h3><span class="chip '+ec+'" style="display:inline-block;">'+o.estado.toUpperCase()+'</span></div><p><strong>Sucursal:</strong> '+suc.nombre+'</p><p><strong>Total:</strong> $'+Number(o.total).toLocaleString('es-AR')+'</p><p><strong>Creada:</strong> '+(o.fecha_creacion?new Date(o.fecha_creacion).toLocaleString('es-AR'):'-')+'</p>'+(o.pin?'<div class="pin-display-card mt-10"><span class="pin-label">TU PIN</span><div class="pin-code">'+o.pin+'</div></div>':'')+((o.estado==='reservada'||o.estado==='lista_retiro')?'<button class="btn btn-outline mt-10" onclick="cancelarReserva('+o.id+')">Cancelar esta reserva</button>':'')+'</div>';
+            const btnVerProd = '<button class="btn btn-outline btn-sm mt-10" onclick="abrirModalDetalleOrden('+o.id+')" style="margin-right:8px;">📦 Ver Productos</button>';
+            const btnCancel = (o.estado==='reservada'||o.estado==='lista_retiro') ? '<button class="btn btn-outline btn-sm mt-10" onclick="cancelarReserva('+o.id+')">Cancelar esta reserva</button>' : '';
+            html += '<div class="card mb-20" style="border-left:4px solid var(--cyan);"><div style="display:flex;justify-content:space-between;align-items:center;"><h3>Orden ORD-'+o.id+'</h3><span class="chip '+ec+'" style="display:inline-block;">'+o.estado.toUpperCase()+'</span></div><p><strong>Sucursal:</strong> '+suc.nombre+'</p><p><strong>Total:</strong> $'+Number(o.total).toLocaleString('es-AR')+'</p><p><strong>Creada:</strong> '+(o.fecha_creacion?new Date(o.fecha_creacion).toLocaleString('es-AR'):'-')+'</p>'+(o.pin?'<div class="pin-display-card mt-10"><span class="pin-label">TU PIN</span><div class="pin-code">'+o.pin+'</div></div>':'')+'<div class="mt-10">'+btnVerProd+btnCancel+'</div></div>';
         });
         listaDiv.innerHTML = html;
     } catch(e) {
@@ -880,8 +882,53 @@ function filtrarOrdenes(){
         const ec=o.estado==='retirada'?'text-green':o.estado==='cancelada'?'text-red':'';
         const venc=o.fecha_vencimiento?new Date(o.fecha_vencimiento).toLocaleString('es-AR'):'-';
         const puede=o.estado==='reservada'||o.estado==='lista_retiro';
-        return '<tr><td>ORD-'+o.id+'</td><td>'+(o.usuario_id||'Anonimo')+'</td><td>'+(suc?suc.nombre:'#'+o.sucursal_id)+'</td><td>$'+Number(o.total).toLocaleString('es-AR')+'</td><td class="'+ec+'">'+o.estado.toUpperCase()+'</td><td>'+venc+'</td><td>'+(puede?'<button class="btn btn-primary btn-sm" onclick="abrirModalRetiro('+o.id+')">Confirmar Retiro</button>':'-')+'</td></tr>';
+        const btnDetalle = '<button class="btn btn-outline btn-sm" onclick="abrirModalDetalleOrden('+o.id+')" style="margin-right:6px;" title="Ver productos de esta orden">📦 Ver Productos</button>';
+        const btnRetiro = puede ? '<button class="btn btn-primary btn-sm" onclick="abrirModalRetiro('+o.id+')">Confirmar Retiro</button>' : '';
+        return '<tr><td>ORD-'+o.id+'</td><td>'+(o.usuario_id||'Anonimo')+'</td><td>'+(suc?suc.nombre:'#'+o.sucursal_id)+'</td><td>$'+Number(o.total).toLocaleString('es-AR')+'</td><td class="'+ec+'">'+o.estado.toUpperCase()+'</td><td>'+venc+'</td><td><div style="display:inline-flex;align-items:center;">'+btnDetalle+btnRetiro+'</div></td></tr>';
     }).join('');
+}
+
+function abrirModalDetalleOrden(ordenId){
+    let orden = (state.todasLasOrdenes || []).find(o => o.id === ordenId);
+    if (!orden) {
+        fetch(API_BASE_URL+'/api/ordenes/'+ordenId, {headers: getAuthHeaders()})
+            .then(r => {
+                if(!r.ok) throw new Error('No se pudo cargar el detalle de la orden');
+                return r.json();
+            })
+            .then(o => renderModalDetalleOrden(o))
+            .catch(e => showToast(e.message, 'error'));
+        return;
+    }
+    renderModalDetalleOrden(orden);
+}
+
+function renderModalDetalleOrden(orden){
+    document.getElementById('modal-detalle-orden-titulo').textContent = 'Detalle de la Orden ORD-' + orden.id;
+    const suc = state.sucursales.find(s => s.id === orden.sucursal_id);
+    document.getElementById('modal-detalle-orden-subtitulo').textContent = 
+        (suc ? 'Sucursal: ' + suc.nombre : '') + ' • Estado: ' + (orden.estado || '').toUpperCase();
+    
+    const tbody = document.getElementById('modal-detalle-orden-tbody');
+    const items = orden.items || [];
+    if (!items.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Sin detalles de productos registrados.</td></tr>';
+    } else {
+        tbody.innerHTML = items.map(it => {
+            const nombre = it.nombre || ('Producto #' + it.producto_id);
+            const cant = it.cantidad || 1;
+            const precioU = Number(it.precio_unitario || 0);
+            const sub = cant * precioU;
+            return `<tr>
+                <td style="font-weight:600;">${nombre}</td>
+                <td style="text-align:center;">${cant}</td>
+                <td style="text-align:right;">$${precioU.toLocaleString('es-AR')}</td>
+                <td style="text-align:right;color:var(--cyan);font-weight:600;">$${sub.toLocaleString('es-AR')}</td>
+            </tr>`;
+        }).join('');
+    }
+    document.getElementById('modal-detalle-orden-total').textContent = '$' + Number(orden.total || 0).toLocaleString('es-AR');
+    document.getElementById('modal-detalle-orden').classList.add('activo');
 }
 
 function abrirModalRetiro(ordenId){
