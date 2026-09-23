@@ -213,6 +213,7 @@ function cerrarModal(modalId) { document.getElementById(modalId).classList.remov
 setupBackdropClose('modal-confirmar-retiro', () => cerrarModal('modal-confirmar-retiro'));
 setupBackdropClose('modal-producto-form', () => cerrarModal('modal-producto-form'));
 setupBackdropClose('modal-detalle-orden', () => cerrarModal('modal-detalle-orden'));
+setupBackdropClose('modal-cancelar-orden', () => cerrarModal('modal-cancelar-orden'));
 
 // ==========================================================================
 // TOAST
@@ -500,6 +501,7 @@ async function cargarMisOrdenes(){
             throw new Error('No se pudieron cargar las ordenes');
         }
         const ordenes = await res.json();
+        state.misOrdenes = ordenes;  // guardar para uso en modal de detalle
         if (!ordenes.length) {
             listaDiv.innerHTML = '<p class="text-muted">No tienes reservas activas con esta cuenta.</p>';
             return;
@@ -509,7 +511,7 @@ async function cargarMisOrdenes(){
             const suc = state.sucursales.find(s=>s.id===o.sucursal_id) || {nombre: 'Sucursal #'+o.sucursal_id};
             const ec = o.estado === 'retirada' ? 'stock-ok' : o.estado === 'cancelada' ? 'stock-out' : 'stock-low';
             const btnVerProd = '<button class="btn btn-outline btn-sm mt-10" onclick="abrirModalDetalleOrden('+o.id+')" style="margin-right:8px;">📦 Ver Productos</button>';
-            const btnCancel = (o.estado==='reservada'||o.estado==='lista_retiro') ? '<button class="btn btn-outline btn-sm mt-10" onclick="cancelarReserva('+o.id+')">Cancelar esta reserva</button>' : '';
+            const btnCancel = (o.estado==='reservada'||o.estado==='lista_retiro') ? '<button class="btn btn-outline btn-sm mt-10" onclick="abrirModalCancelarOrden('+o.id+')" style="color:#fc5c5c;border-color:#fc5c5c;">Cancelar esta reserva</button>' : '';
             html += '<div class="card mb-20" style="border-left:4px solid var(--cyan);"><div style="display:flex;justify-content:space-between;align-items:center;"><h3>Orden ORD-'+o.id+'</h3><span class="chip '+ec+'" style="display:inline-block;">'+o.estado.toUpperCase()+'</span></div><p><strong>Sucursal:</strong> '+suc.nombre+'</p><p><strong>Total:</strong> $'+Number(o.total).toLocaleString('es-AR')+'</p><p><strong>Creada:</strong> '+(o.fecha_creacion?new Date(o.fecha_creacion).toLocaleString('es-AR'):'-')+'</p>'+(o.pin?'<div class="pin-display-card mt-10"><span class="pin-label">TU PIN</span><div class="pin-code">'+o.pin+'</div></div>':'')+'<div class="mt-10">'+btnVerProd+btnCancel+'</div></div>';
         });
         listaDiv.innerHTML = html;
@@ -518,17 +520,26 @@ async function cargarMisOrdenes(){
     }
 }
 
-async function cancelarReserva(ordenId){
-    if(!confirm('Estas seguro de cancelar esta reserva?'))return;
-    const pinInput=prompt('Ingresa tu PIN para confirmar la cancelacion:');
-    if(!pinInput)return;
+function abrirModalCancelarOrden(ordenId){
+    document.getElementById('cancelar-orden-id').value = ordenId;
+    document.getElementById('cancelar-orden-id-label').textContent = 'ORD-' + ordenId;
+    document.getElementById('cancelar-pin-input').value = '';
+    document.getElementById('modal-cancelar-orden').classList.add('activo');
+}
+
+async function confirmarCancelacion(){
+    const ordenId = document.getElementById('cancelar-orden-id').value;
+    const pin = document.getElementById('cancelar-pin-input').value.trim();
+    if(!pin){ showToast('Ingresá tu PIN para cancelar', 'error'); return; }
     try{
-        const res=await fetch(API_BASE_URL+'/api/ordenes/'+ordenId+'/cancelar',{
-            method:'POST',headers:getAuthHeaders(),body:JSON.stringify({pin:pinInput})
+        const res = await fetch(API_BASE_URL+'/api/ordenes/'+ordenId+'/cancelar',{
+            method:'POST', headers:getAuthHeaders(), body:JSON.stringify({pin})
         });
-        if(!res.ok){const err=await res.json().catch(()=>({detail:'Error'}));throw new Error(err.detail);}
-        showToast('Reserva cancelada.','success');cargarMisOrdenes();cargarCatalogo();
-    }catch(e){showToast(e.message,'error');}
+        if(!res.ok){ const err=await res.json().catch(()=>({detail:'Error'})); throw new Error(err.detail); }
+        cerrarModal('modal-cancelar-orden');
+        showToast('Reserva cancelada correctamente.', 'success');
+        cargarMisOrdenes(); cargarCatalogo();
+    }catch(e){ showToast(e.message, 'error'); }
 }
 
 document.getElementById('btn-buscar-orden').addEventListener('click',async()=>{
@@ -890,15 +901,22 @@ function filtrarOrdenes(){
 }
 
 function abrirModalDetalleOrden(ordenId){
-    let orden = (state.todasLasOrdenes || []).find(o => o.id === ordenId);
+    // Buscar primero en mis-ordenes (cliente, incluye nombre de producto)
+    // luego en todas-las-ordenes (empleado), y como fallback hacer fetch
+    let orden = (state.misOrdenes || []).find(o => o.id === ordenId)
+             || (state.todasLasOrdenes || []).find(o => o.id === ordenId);
     if (!orden) {
-        fetch(API_BASE_URL+'/api/ordenes/'+ordenId, {headers: getAuthHeaders()})
-            .then(r => {
-                if(!r.ok) throw new Error('No se pudo cargar el detalle de la orden');
-                return r.json();
+        fetch(API_BASE_URL+'/api/mis-ordenes', {headers: getAuthHeaders()})
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(ordenes => {
+                const o = ordenes.find(x => x.id === ordenId);
+                if (o) { renderModalDetalleOrden(o); return; }
+                // Si no es cliente, intentar endpoint de empleado
+                return fetch(API_BASE_URL+'/api/ordenes/'+ordenId, {headers: getAuthHeaders()})
+                    .then(r => { if(!r.ok) throw new Error('No se pudo cargar el detalle'); return r.json(); })
+                    .then(o => renderModalDetalleOrden(o));
             })
-            .then(o => renderModalDetalleOrden(o))
-            .catch(e => showToast(e.message, 'error'));
+            .catch(e => showToast(e.message || 'No se pudo cargar el detalle', 'error'));
         return;
     }
     renderModalDetalleOrden(orden);

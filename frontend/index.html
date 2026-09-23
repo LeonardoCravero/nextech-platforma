@@ -324,6 +324,30 @@
     </div>
 
     <!-- ========================================== -->
+    <!-- MODAL: CANCELAR RESERVA (cliente)          -->
+    <!-- ========================================== -->
+    <div id="modal-cancelar-orden" class="modal">
+        <div class="modal-content card" style="max-width:440px;">
+            <div class="modal-header">
+                <h2>Cancelar Reserva</h2>
+                <button class="modal-close-btn" onclick="cerrarModal('modal-cancelar-orden')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted mb-15">Ingresá tu PIN para confirmar la cancelación de la orden <strong id="cancelar-orden-id-label"></strong>.</p>
+                <input type="hidden" id="cancelar-orden-id">
+                <div class="form-group">
+                    <label for="cancelar-pin-input">Tu PIN de retiro</label>
+                    <input type="text" id="cancelar-pin-input" class="form-input" placeholder="XXXXXX" maxlength="6"
+                        style="text-transform:uppercase;letter-spacing:3px;font-size:1.2rem;text-align:center;"
+                        oninput="this.value=this.value.toUpperCase()">
+                </div>
+                <button class="btn btn-sm mt-10" style="background:#e53e3e;color:#fff;width:100%;padding:0.75rem;" onclick="confirmarCancelacion()">🗑️ Confirmar Cancelación</button>
+                <button class="btn btn-outline btn-block mt-10" onclick="cerrarModal('modal-cancelar-orden')">Volver</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
     <!-- MODAL: DETALLE DE PRODUCTOS DE LA ORDEN    -->
     <!-- ========================================== -->
     <div id="modal-detalle-orden" class="modal">
@@ -646,6 +670,6 @@
         </div>
     </div>
 
-    <script src="app.js?v=10"></script>
+    <script src="app.js?v=11"></script>
 </body>
 </html>
