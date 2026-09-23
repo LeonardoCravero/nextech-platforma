@@ -507,6 +507,7 @@ async function cargarMisOrdenes(){
         let html = '';
         ordenes.forEach(o => {
             const suc = state.sucursales.find(s=>s.id===o.sucursal_id) || {nombre: 'Sucursal #'+o.sucursal_id};
+            const ec = o.estado === 'retirada' ? 'stock-ok' : o.estado === 'cancelada' ? 'stock-out' : 'stock-low';
             const btnVerProd = '<button class="btn btn-outline btn-sm mt-10" onclick="abrirModalDetalleOrden('+o.id+')" style="margin-right:8px;">📦 Ver Productos</button>';
             const btnCancel = (o.estado==='reservada'||o.estado==='lista_retiro') ? '<button class="btn btn-outline btn-sm mt-10" onclick="cancelarReserva('+o.id+')">Cancelar esta reserva</button>' : '';
             html += '<div class="card mb-20" style="border-left:4px solid var(--cyan);"><div style="display:flex;justify-content:space-between;align-items:center;"><h3>Orden ORD-'+o.id+'</h3><span class="chip '+ec+'" style="display:inline-block;">'+o.estado.toUpperCase()+'</span></div><p><strong>Sucursal:</strong> '+suc.nombre+'</p><p><strong>Total:</strong> $'+Number(o.total).toLocaleString('es-AR')+'</p><p><strong>Creada:</strong> '+(o.fecha_creacion?new Date(o.fecha_creacion).toLocaleString('es-AR'):'-')+'</p>'+(o.pin?'<div class="pin-display-card mt-10"><span class="pin-label">TU PIN</span><div class="pin-code">'+o.pin+'</div></div>':'')+'<div class="mt-10">'+btnVerProd+btnCancel+'</div></div>';
