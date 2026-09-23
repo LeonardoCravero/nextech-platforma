@@ -47,9 +47,12 @@ class InventarioCreate(BaseModel):
 # --- GET inventario completo (empleado) ---------------------------------------
 
 @router.get("/inventario", dependencies=[Depends(require_role("empleado"))])
-def get_inventario(db: Session = Depends(get_db)):
-    """(Solo empleado) Lista todo el inventario con detalles de producto y sucursal."""
-    items = db.query(models.InventarioSucursal).all()
+def get_inventario(sucursal_id: Optional[int] = None, db: Session = Depends(get_db)):
+    """(Solo empleado) Lista todo el inventario con detalles de producto y sucursal. Permite filtrar por sucursal."""
+    query = db.query(models.InventarioSucursal)
+    if sucursal_id:
+        query = query.filter(models.InventarioSucursal.sucursal_id == sucursal_id)
+    items = query.all()
     result = []
     for item in items:
         result.append({

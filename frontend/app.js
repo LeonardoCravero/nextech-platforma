@@ -176,14 +176,38 @@ document.querySelectorAll('.nav-link').forEach(btn => {
         if (targetEl) {
             targetEl.classList.add('activa');
             window.scrollTo({top:0,behavior:'smooth'});
-            if (targetId==='seccion-inventario' && state.usuario && state.usuario.role==='empleado') cargarInventarioEmpleado();
-            if (targetId==='seccion-todas-ordenes' && state.usuario && state.usuario.role==='empleado') cargarTodasLasOrdenes();
+            const globalSuc = document.getElementById('sucursal-global')?.value || 'todas';
+            if (targetId==='seccion-inventario' && state.usuario && state.usuario.role==='empleado') {
+                const invSel = document.getElementById('inv-filtro-sucursal');
+                if (invSel) invSel.value = globalSuc;
+                cargarInventarioEmpleado();
+            }
+            if (targetId==='seccion-todas-ordenes' && state.usuario && state.usuario.role==='empleado') {
+                const ordSel = document.getElementById('ord-filtro-sucursal');
+                if (ordSel) ordSel.value = globalSuc;
+                cargarTodasLasOrdenes();
+            }
             if (targetId==='seccion-ordenes' && state.usuario && state.usuario.role==='cliente') cargarMisOrdenes();
         }
     });
 });
 document.getElementById('sucursal-global').addEventListener('change', (e) => {
-    renderProductos(state.productos, e.target.value);
+    const val = e.target.value;
+    renderProductos(state.productos, val);
+
+    // Sincronizar selectores de filtros de empleado si existen
+    const invSel = document.getElementById('inv-filtro-sucursal');
+    if (invSel) invSel.value = val;
+    const ordSel = document.getElementById('ord-filtro-sucursal');
+    if (ordSel) ordSel.value = val;
+
+    // Si el empleado está actualmente en esa sección, refrescar vista
+    const seccionActiva = document.querySelector('.seccion.activa')?.id;
+    if (seccionActiva === 'seccion-inventario' && state.usuario?.role === 'empleado') {
+        cargarInventarioEmpleado();
+    } else if (seccionActiva === 'seccion-todas-ordenes' && state.usuario?.role === 'empleado') {
+        filtrarOrdenes();
+    }
 });
 function cerrarModal(modalId) { document.getElementById(modalId).classList.remove('activo'); }
 setupBackdropClose('modal-confirmar-retiro', () => cerrarModal('modal-confirmar-retiro'));
@@ -209,13 +233,14 @@ async function cargarSucursales() {
         const res = await fetch(API_BASE_URL+'/api/sucursales');
         if (res.ok) {
             state.sucursales = await res.json();
+            const optHtml = state.sucursales.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('');
             const sel = document.getElementById('sucursal-global');
-            sel.innerHTML = '<option value="todas">Todas las sucursales</option>';
-            state.sucursales.forEach(suc => {
-                const opt = document.createElement('option');
-                opt.value = suc.id; opt.textContent = suc.nombre;
-                sel.appendChild(opt);
-            });
+            sel.innerHTML = '<option value="todas">Todas las sucursales</option>' + optHtml;
+            // Populate employee filter selectors too
+            const invSel = document.getElementById('inv-filtro-sucursal');
+            if (invSel) invSel.innerHTML = '<option value="todas">Todas las sucursales</option>' + optHtml;
+            const ordSel = document.getElementById('ord-filtro-sucursal');
+            if (ordSel) ordSel.innerHTML = '<option value="todas">Todas</option>' + optHtml;
         }
     } catch(e) {
         state.sucursales = [
@@ -529,10 +554,17 @@ async function cargarInventarioEmpleado(){
     if(!tbody)return;
     tbody.innerHTML='<tr><td colspan="8" class="text-center text-muted">Cargando...</td></tr>';
     try{
-        const res=await fetch(API_BASE_URL+'/api/inventario',{headers:getAuthHeaders()});
+        const selSuc = document.getElementById('inv-filtro-sucursal')?.value || document.getElementById('sucursal-global')?.value || 'todas';
+        const url = (selSuc && selSuc !== 'todas') 
+            ? `${API_BASE_URL}/api/inventario?sucursal_id=${selSuc}` 
+            : `${API_BASE_URL}/api/inventario`;
+        const res=await fetch(url,{headers:getAuthHeaders()});
         if(!res.ok)throw new Error('No se pudo cargar el inventario');
-        const items=await res.json();
-        if(!items.length){tbody.innerHTML='<tr><td colspan="8" class="text-center text-muted">Sin datos.</td></tr>';return;}
+        let items=await res.json();
+        if (selSuc && selSuc !== 'todas') {
+            items = items.filter(it => String(it.sucursal_id) === String(selSuc));
+        }
+        if(!items.length){tbody.innerHTML='<tr><td colspan="8" class="text-center text-muted">Sin datos para la sucursal seleccionada.</td></tr>';return;}
         tbody.innerHTML=items.map(item=>'<tr><td>'+( item.producto_nombre||'-')+'</td><td><code>'+(item.sku||'-')+'</code></td><td>'+(item.categoria||'-')+'</td><td>$'+Number(item.precio||0).toLocaleString('es-AR')+'</td><td>'+(item.sucursal_nombre||'-')+'</td><td class="'+(item.stock_disponible<=item.stock_minimo?'text-red':'text-green')+'">'+item.stock_disponible+'</td><td>'+item.stock_reservado+'</td><td><button class="btn btn-outline btn-sm" onclick="abrirEditarProducto('+item.producto_id+',\''+( item.producto_nombre||'').replace(/'/g,"\\'")+'\',\''+(item.categoria||'').replace(/'/g,"\\'")+'\','+( item.precio||0)+')">Editar</button> <button class="btn btn-sm" style="background:#e53e3e;color:#fff;" onclick="eliminarProducto('+item.producto_id+')">Eliminar</button></td></tr>').join('');
     }catch(e){tbody.innerHTML='<tr><td colspan="8" class="text-center text-muted">'+e.message+'</td></tr>';}
 }
@@ -819,17 +851,39 @@ async function cargarTodasLasOrdenes(){
     try{
         const res=await fetch(API_BASE_URL+'/api/ordenes',{headers:getAuthHeaders()});
         if(!res.ok)throw new Error('No se pudieron cargar las ordenes');
-        const ordenes=await res.json();
-        if(!ordenes.length){tbody.innerHTML='<tr><td colspan="7" class="text-center text-muted">Sin ordenes.</td></tr>';return;}
-        tbody.innerHTML=ordenes.map(o=>{
-            const suc=state.sucursales.find(s=>s.id===o.sucursal_id);
-            const ec=o.estado==='retirada'?'text-green':o.estado==='cancelada'?'text-red':'';
-            const venc=o.fecha_vencimiento?new Date(o.fecha_vencimiento).toLocaleString('es-AR'):'-';
-            const puede=o.estado==='reservada'||o.estado==='lista_retiro';
-            return '<tr><td>ORD-'+o.id+'</td><td>'+(o.usuario_id||'Anonimo')+'</td><td>'+(suc?suc.nombre:'#'+o.sucursal_id)+'</td><td>$'+Number(o.total).toLocaleString('es-AR')+'</td><td class="'+ec+'">'+o.estado.toUpperCase()+'</td><td>'+venc+'</td><td>'+(puede?'<button class="btn btn-primary btn-sm" onclick="abrirModalRetiro('+o.id+')">Confirmar Retiro</button>':'-')+'</td></tr>';
-        }).join('');
+        state.todasLasOrdenes = await res.json();
+        filtrarOrdenes();
     }catch(e){tbody.innerHTML='<tr><td colspan="7" class="text-center text-muted">'+e.message+'</td></tr>';}
 }
+
+function filtrarOrdenes(){
+    const tbody=document.getElementById('tbody-todas-ordenes');
+    if(!tbody)return;
+    const ordenes = state.todasLasOrdenes || [];
+    const sucVal = document.getElementById('ord-filtro-sucursal')?.value || document.getElementById('sucursal-global')?.value || 'todas';
+    const pinVal = (document.getElementById('ord-filtro-pin')?.value || '').trim().toUpperCase();
+
+    const filtradas = ordenes.filter(o => {
+        const coincideSucursal = (sucVal === 'todas' || String(o.sucursal_id) === String(sucVal));
+        const pinOrden = (o.pin || '').toUpperCase();
+        const coincidePin = (!pinVal || pinOrden.includes(pinVal));
+        return coincideSucursal && coincidePin;
+    });
+
+    if(!filtradas.length){
+        tbody.innerHTML='<tr><td colspan="7" class="text-center text-muted">No se encontraron órdenes con los filtros aplicados.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML=filtradas.map(o=>{
+        const suc=state.sucursales.find(s=>s.id===o.sucursal_id);
+        const ec=o.estado==='retirada'?'text-green':o.estado==='cancelada'?'text-red':'';
+        const venc=o.fecha_vencimiento?new Date(o.fecha_vencimiento).toLocaleString('es-AR'):'-';
+        const puede=o.estado==='reservada'||o.estado==='lista_retiro';
+        return '<tr><td>ORD-'+o.id+'</td><td>'+(o.usuario_id||'Anonimo')+'</td><td>'+(suc?suc.nombre:'#'+o.sucursal_id)+'</td><td>$'+Number(o.total).toLocaleString('es-AR')+'</td><td class="'+ec+'">'+o.estado.toUpperCase()+'</td><td>'+venc+'</td><td>'+(puede?'<button class="btn btn-primary btn-sm" onclick="abrirModalRetiro('+o.id+')">Confirmar Retiro</button>':'-')+'</td></tr>';
+    }).join('');
+}
+
 function abrirModalRetiro(ordenId){
     document.getElementById('retiro-orden-id').value=ordenId;
     document.getElementById('retiro-orden-id-label').textContent='ORD-'+ordenId;

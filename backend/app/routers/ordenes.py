@@ -161,9 +161,14 @@ def detalle_orden(
 # --- GET todas las ordenes (solo empleado) ------------------------------------
 
 @router.get("/ordenes", dependencies=[Depends(require_role("empleado"))])
-def listar_ordenes(db: Session = Depends(get_db)):
-    """(Solo empleado) Lista todas las ordenes."""
-    ordenes = db.query(models.OrdenClickCollect).order_by(
+def listar_ordenes(sucursal_id: Optional[int] = None, pin: Optional[str] = None, db: Session = Depends(get_db)):
+    """(Solo empleado) Lista todas las ordenes. Permite filtrar opcionalmente por sucursal y PIN."""
+    query = db.query(models.OrdenClickCollect)
+    if sucursal_id:
+        query = query.filter(models.OrdenClickCollect.sucursal_id == sucursal_id)
+    if pin:
+        query = query.join(models.PINRetiro).filter(models.PINRetiro.codigo.ilike(f"%{pin.strip()}%"))
+    ordenes = query.order_by(
         models.OrdenClickCollect.fecha_creacion.desc()
     ).all()
     result = []

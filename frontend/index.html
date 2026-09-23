@@ -228,8 +228,14 @@
             <h1 class="page-title">Gestión de Inventario</h1>
             <p class="section-desc">Administrá los productos disponibles en todas las sucursales.</p>
 
-            <div class="card mb-20">
+            <div class="card mb-20" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
                 <button id="btn-nuevo-producto" class="btn btn-primary" onclick="abrirModalNuevoProducto()">➕ Nuevo Producto</button>
+                <div style="display:flex;align-items:center;gap:8px;margin-left:auto;">
+                    <label for="inv-filtro-sucursal" style="font-size:0.85rem;color:var(--text-muted);white-space:nowrap;">🏢 Filtrar por sucursal:</label>
+                    <select id="inv-filtro-sucursal" class="form-select" style="min-width:180px;padding:0.5rem 0.8rem;" onchange="cargarInventarioEmpleado()">
+                        <option value="todas">Todas las sucursales</option>
+                    </select>
+                </div>
             </div>
 
             <div id="tabla-inventario-wrap">
@@ -259,6 +265,21 @@
         <section id="seccion-todas-ordenes" class="seccion" data-protected="empleado">
             <h1 class="page-title">Todas las Órdenes de Reserva</h1>
             <p class="section-desc">Gestioná todas las órdenes Click &amp; Collect. Para confirmar un retiro, ingresá el PIN del cliente.</p>
+
+            <div class="card mb-20" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <label for="ord-filtro-sucursal" style="font-size:0.85rem;color:var(--text-muted);white-space:nowrap;">🏢 Sucursal:</label>
+                    <select id="ord-filtro-sucursal" class="form-select" style="min-width:180px;padding:0.5rem 0.8rem;" onchange="filtrarOrdenes()">
+                        <option value="todas">Todas</option>
+                    </select>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-left:auto;">
+                    <label for="ord-filtro-pin" style="font-size:0.85rem;color:var(--text-muted);white-space:nowrap;">🔑 Buscar por PIN:</label>
+                    <input type="text" id="ord-filtro-pin" class="form-input" placeholder="Ej: A3F9K2" maxlength="6"
+                        style="width:130px;padding:0.5rem 0.75rem;text-transform:uppercase;letter-spacing:2px;"
+                        oninput="this.value=this.value.toUpperCase();filtrarOrdenes()">
+                </div>
+            </div>
 
             <div id="tabla-ordenes-wrap">
                 <table class="tabla-inventario" id="tabla-todas-ordenes">
@@ -582,6 +603,6 @@
         </div>
     </div>
 
-    <script src="app.js?v=6"></script>
+    <script src="app.js?v=8"></script>
 </body>
 </html>
