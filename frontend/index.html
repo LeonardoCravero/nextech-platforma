@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
     <!-- Barra Superior de Publicidad y Avisos -->
@@ -306,7 +306,7 @@
     <!-- MODAL: NUEVO/EDITAR PRODUCTO (empleado)    -->
     <!-- ========================================== -->
     <div id="modal-producto-form" class="modal">
-        <div class="modal-content card" style="max-width:560px;">
+        <div class="modal-content modal-producto-card card" style="max-width:640px;">
             <div class="modal-header">
                 <h2 id="modal-producto-titulo">Nuevo Producto</h2>
                 <button class="modal-close-btn" onclick="cerrarModal('modal-producto-form')">&times;</button>
@@ -344,19 +344,21 @@
                     <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:8px;">
                         Marcá únicamente las sucursales donde este producto estará disponible para la venta.
                     </p>
-                    <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
-                        <thead>
-                            <tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
-                                <th style="text-align:center;padding:6px 4px;width:40px;color:var(--text-muted);">Vender</th>
-                                <th style="text-align:left;padding:6px 8px;color:var(--text-muted);">Sucursal</th>
-                                <th style="text-align:center;padding:6px 8px;color:var(--text-muted);">Stock inicial</th>
-                                <th style="text-align:center;padding:6px 8px;color:var(--text-muted);">Stock mínimo</th>
-                            </tr>
-                        </thead>
-                        <tbody id="prod-form-stock-nuevo-tbody">
-                            <!-- rows injected by JS -->
-                        </tbody>
-                    </table>
+                    <div style="overflow-x:auto;margin-top:6px;">
+                        <table style="width:100%;border-collapse:collapse;font-size:0.85rem;min-width:440px;">
+                            <thead>
+                                <tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
+                                    <th style="text-align:center;padding:6px 4px;width:40px;color:var(--text-muted);">Vender</th>
+                                    <th style="text-align:left;padding:6px 8px;color:var(--text-muted);">Sucursal</th>
+                                    <th style="text-align:center;padding:6px 8px;color:var(--text-muted);">Stock inicial</th>
+                                    <th style="text-align:center;padding:6px 8px;color:var(--text-muted);">Stock mínimo</th>
+                                </tr>
+                            </thead>
+                            <tbody id="prod-form-stock-nuevo-tbody">
+                                <!-- rows injected by JS -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
                 <!-- Ajuste de stock por sucursal (solo al EDITAR un producto) -->
@@ -367,20 +369,22 @@
                     <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:8px;">
                         Ajustá el stock de cada sucursal o quitá el producto de las que no correspondan.
                     </p>
-                    <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
-                        <thead>
-                            <tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
-                                <th style="text-align:left;padding:6px 8px;color:var(--text-muted);">Sucursal</th>
-                                <th style="text-align:center;padding:6px 8px;color:var(--text-muted);">Disponible</th>
-                                <th style="text-align:center;padding:6px 8px;color:var(--text-muted);">Reservado</th>
-                                <th style="text-align:center;padding:6px 8px;color:var(--text-muted);">Mínimo</th>
-                                <th style="text-align:center;padding:6px 8px;color:var(--text-muted);">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="prod-form-stock-editar-tbody">
-                            <!-- rows injected by JS -->
-                        </tbody>
-                    </table>
+                    <div style="overflow-x:auto;margin-top:6px;">
+                        <table style="width:100%;border-collapse:collapse;font-size:0.85rem;min-width:460px;">
+                            <thead>
+                                <tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
+                                    <th style="text-align:left;padding:6px 8px;color:var(--text-muted);">Sucursal</th>
+                                    <th style="text-align:center;padding:6px 8px;color:var(--text-muted);">Disponible</th>
+                                    <th style="text-align:center;padding:6px 8px;color:var(--text-muted);">Reservado</th>
+                                    <th style="text-align:center;padding:6px 8px;color:var(--text-muted);">Mínimo</th>
+                                    <th style="text-align:center;padding:6px 8px;color:var(--text-muted);">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="prod-form-stock-editar-tbody">
+                                <!-- rows injected by JS -->
+                            </tbody>
+                        </table>
+                    </div>
 
                     <!-- Agregar a otra sucursal -->
                     <div id="prod-form-agregar-sucursal-wrap" style="margin-top:12px;padding:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:8px;">
@@ -395,7 +399,7 @@
                     </div>
                 </div>
 
-                <button class="btn btn-primary btn-block mt-15" onclick="guardarProducto()">💾 Guardar Producto</button>
+                <button class="btn btn-primary btn-block mt-20" style="margin-bottom:10px;" onclick="guardarProducto()">💾 Guardar Producto</button>
             </div>
         </div>
     </div>

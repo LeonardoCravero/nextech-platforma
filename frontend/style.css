@@ -750,6 +750,51 @@ body {
     display: flex;
 }
 
+.modal-content {
+    width: 100%;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+    background: #1E293B;
+    border: 1px solid var(--border-card);
+    border-radius: var(--border-radius);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    padding: 1.8rem;
+    overflow: hidden;
+}
+
+.modal-producto-card {
+    max-width: 620px !important;
+}
+
+.modal-body {
+    overflow-y: auto;
+    flex: 1;
+    padding-right: 8px;
+    padding-bottom: 6px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--cyan) rgba(15, 23, 42, 0.6);
+}
+
+.modal-body::-webkit-scrollbar {
+    width: 6px;
+}
+
+.modal-body::-webkit-scrollbar-track {
+    background: rgba(15, 23, 42, 0.6);
+    border-radius: 4px;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+    background: var(--cyan);
+    border-radius: 4px;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover {
+    background: #38EFFF;
+}
+
 .modal-reserva-card {
     width: 100%;
     max-width: 540px;
@@ -768,6 +813,7 @@ body {
     border-bottom: 1px solid var(--border-card);
     padding-bottom: 1rem;
     margin-bottom: 1.2rem;
+    flex-shrink: 0;
 }
 
 .modal-tag {
